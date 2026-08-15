@@ -1,7 +1,16 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version: 1.1.0
+Version: 1.2.0
+
+v1.2.0 (2026-08-15) — MINOR. Amended by measurement, per the amendment clause.
+- Principle II: the "40% carry a registered type with no DOI" statistic came from a
+  5-record fixture and did not survive the keyed 12-cell run (0 occurrences). Replaced
+  with the measured figure: 3 of 12 records carry no DOI at all. Conclusion unchanged.
+- Principle VII(b): adds the `none` case. Semantic Scholar's AEDP hit — the only one in
+  the candidate set — carries no DOI, type or venue, which is why venue_class and
+  classification_basis must be separate fields.
+
 
 v1.1.0 (2026-08-15) — MINOR, two Required Patterns added:
 - Source attribution where a licence demands it. Semantic Scholar's licence requires
@@ -67,9 +76,16 @@ All work lookups MUST follow a bi-modal workflow.
 
 **Identifiers other than the DOI are permitted where a connector supports them** —
 Semantic Scholar accepts `CorpusId:`, `PMID:`, `ARXIV:`, `MAG:`. This is not a weakening:
-MEASURED, a substantial minority of records carry a registered type and no DOI (~11% of
-Europe PMC's sample, 40% of the Semantic Scholar sample), and a DOI-only strict tool
-would be unable to retrieve them at all.
+MEASURED, **3 of 12 Semantic Scholar top results carry no DOI at all**, and
+`semantic_scholar_id` is the only identifier present on every record. A DOI-only strict
+tool could not retrieve them — including the sole hit on AEDP transformance, which no
+other connector reaches.
+
+*Amended in v1.2.0. The v1.0.0 text cited "40% of the Semantic Scholar sample carry a
+registered type and no DOI", extrapolated from a 5-record fixture before the connector
+could be measured. The keyed 12-cell run found that shape **0 times** — the real
+distribution is 8 with both, 1 with a DOI but no type, 3 with neither. The conclusion
+stands; the statistic did not survive measurement.*
 
 **Rationale:** Prevents hallucinated citations — the failure mode with the worst
 consequences in this domain.
@@ -123,7 +139,13 @@ preprint regardless of what its DOI resolves to.
 **(b) Every classification carries its basis.**
 `classification_basis` ∈ {`provenance`, `registered`, `index-asserted`, `none`}. A record
 with a registered type and no DOI is classified `index-asserted` — NOT flattened to
-`unverified`. Flattening destroys data the API supplied. Whether `index-asserted` suffices
+`unverified`. Flattening destroys data the API supplied.
+
+MEASURED, the `none` case matters as much as `index-asserted`: Semantic Scholar's hit on
+AEDP transformance — the only such hit in the candidate set — carries no DOI, no type and
+no venue. **A hit with no classifiable metadata must survive as a hit.** If
+`venue_class` and `classification_basis` were one field, the single most valuable result
+in the benchmark would be indistinguishable from a failure to retrieve anything. Whether `index-asserted` suffices
 for a given claim is **consumer editorial policy and MUST NOT be decided here.**
 
 **(c) Three venue classes MUST NOT be asserted from `type`.**
@@ -215,4 +237,4 @@ frozen 12-query benchmark exists so such a run is directly comparable.
   `docs/research/connectors/` (five dossiers, coverage matrix, envelope design, and
   `probe/CONTROLLER-NOTES.md`)
 
-**Version:** 1.1.0 | **Ratified:** 2026-08-15 | **Last Amended:** 2026-08-15
+**Version:** 1.2.0 | **Ratified:** 2026-08-15 | **Last Amended:** 2026-08-15
