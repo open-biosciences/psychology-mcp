@@ -4,16 +4,17 @@ from .cross_references import CrossReferences
 from .envelopes import ErrorCode, ErrorDetail, ErrorEnvelope, Pagination, PaginationEnvelope
 from .work import ClassificationBasis, RetractionStatus, VenueClass, Work
 
+# Protocol types (ADR-001 §9): CrossReferences, ErrorCode, ErrorDetail, ErrorEnvelope,
+#   Pagination, PaginationEnvelope — importable by any model, must not import a domain type.
+# Domain types: ClassificationBasis, RetractionStatus, VenueClass, Work.
 __all__ = [
-    # Protocol types
+    "ClassificationBasis",
     "CrossReferences",
     "ErrorCode",
     "ErrorDetail",
     "ErrorEnvelope",
     "Pagination",
     "PaginationEnvelope",
-    # Domain types
-    "ClassificationBasis",
     "RetractionStatus",
     "VenueClass",
     "Work",
