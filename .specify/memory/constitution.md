@@ -1,7 +1,16 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version: 1.0.0 (initial)
+Version: 1.1.0
+
+v1.1.0 (2026-08-15) — MINOR, two Required Patterns added:
+- Source attribution where a licence demands it. Semantic Scholar's licence requires
+  attribution or citation of "The Semantic Scholar Open Data Platform" in published
+  material; verified on key issuance, previously recorded as unverified.
+- Credentials from the environment, never from source. Reinforces the layer boundary:
+  credentials belong to the API layer, not the plugin layer.
+
+v1.0.0 (initial)
 
 Derived from the Life Sciences MCP Constitution v1.1.0, which governs biosciences-mcp.
 Principles I, IV, V, VI transfer with minimal change. Principle II (Fuzzy-to-Fact) needed
@@ -169,6 +178,8 @@ is a specific way the obvious implementation gets it wrong.
 | Per-connector rate limiting | All clients | MEASURED limits differ by orders of magnitude — a shared default is wrong for most. Read `x-rate-limit-*` headers at runtime where published, rather than hardcoding |
 | **`classification_basis` on every classified work** | All work responses | Contract tests |
 | **Polite-pool contact header** | Crossref, OpenAlex | Both grant materially better throughput for a contact address |
+| **Source attribution where a licence requires it** | Semantic Scholar, PubMed, and any connector whose terms demand it | **Semantic Scholar's licence requires attribution or citation of "The Semantic Scholar Open Data Platform" in any published material using its results** (verified 2026-08-15 on key issuance). PubMed's connector already imposes DOI links. These are hard obligations, not courtesies, and they propagate to every downstream consumer of a grounded claim |
+| **Credentials from the environment, never from source** | All keyed clients | `.env` is gitignored; `.env.example` carries placeholders only. Credentials belong to this layer — a plugin declares servers by URL and reaches keys via `${VAR}`, `headersHelper` or `userConfig`, and never holds one |
 
 ## Governance
 
@@ -204,4 +215,4 @@ frozen 12-query benchmark exists so such a run is directly comparable.
   `docs/research/connectors/` (five dossiers, coverage matrix, envelope design, and
   `probe/CONTROLLER-NOTES.md`)
 
-**Version:** 1.0.0 | **Ratified:** 2026-08-15 | **Last Amended:** 2026-08-15
+**Version:** 1.1.0 | **Ratified:** 2026-08-15 | **Last Amended:** 2026-08-15
