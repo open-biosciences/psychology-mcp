@@ -10,9 +10,6 @@
   },
   "deployment": {
     "transport": "http",
-    "log_level": "INFO",
-    "env": {
-      "PSYCHOLOGY_MCP_CONTACT_EMAIL": "dwbranson@gmail.com"
-    }
+    "log_level": "INFO"
   }
 }

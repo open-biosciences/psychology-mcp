@@ -15,6 +15,8 @@ otherwise only ever be re-verified by hand:
 - OpenAlex batch-filters DOIs, and rejects more than the measured cap
 """
 
+import os
+
 import httpx
 import pytest
 
@@ -24,7 +26,7 @@ from psychology_mcp.models.work import ClassificationBasis, RetractionStatus, Ve
 
 pytestmark = pytest.mark.integration
 
-CONTACT = "dwbranson@gmail.com"
+CONTACT = os.environ.get("PSYCHOLOGY_MCP_CONTACT_EMAIL", "")
 
 # The C1 control: Wiebe & Johnson 2016, EFT outcome review.
 KNOWN_DOI = "10.1111/famp.12229"

@@ -47,40 +47,55 @@ exactly that shape and deploys, so `environment.project = "."` plus a hatchling
 `[project]` is sufficient. `hci-canon` carries all three mechanisms at once; that is
 belt-and-braces, not a requirement.
 
-## Environment variables — set them in the Horizon UI
+## Environment variables — the complete inventory
 
-**The UI is authoritative. `fastmcp.json` is not confirmed to be read by Horizon.**
+`.env.example` is the canonical list. **Two variables exist. Neither is set anywhere
+today** — there is no `.env` in this repo, and nothing is exported.
 
-The evidence: `biosciences-mcp` is deployed and needs `BIOGRID_API_KEY`, `NCBI_API_KEY`,
-`BIOSCIENCES_API_KEY`, and `FASTMCP_CLOUD_ENDPOINT`. Its `fastmcp.json` declares **zero**
-`env` entries — as does `biosciences-mcp-edge`'s. Those variables are therefore set in the
-platform, not in the repo. Horizon's own deployment page documents four UI fields and does
-not mention `fastmcp.json` at all.
+| Variable | Needed for this deployment? | Current state | Notes |
+|---|---|---|---|
+| `PSYCHOLOGY_MCP_CONTACT_EMAIL` | **Yes — set it in the Horizon UI** | **unset**; no `.env` exists | Puts requests in the Crossref and OpenAlex **polite pools**. Not a secret: it is transmitted in the `User-Agent` on every request |
+| `S2_API_KEY` | **No — do not set it** | unset | Semantic Scholar is **Tier 1 and unbuilt**. Nothing in this deployment reads it. Setting it puts an unused credential on a server that otherwise holds none |
 
-`fastmcp.json` here does carry the variable:
+**Tier 0 — Crossref and OpenAlex — is entirely keyless.** That is why the gateway serves
+correctly with nothing configured, and it is worth preserving.
 
-```json
-"deployment": { ..., "env": { "PSYCHOLOGY_MCP_CONTACT_EMAIL": "dwbranson@gmail.com" } }
+### Local setup, before running the live suite
+
+```bash
+cp .env.example .env          # gitignored
+# set PSYCHOLOGY_MCP_CONTACT_EMAIL to a real contact address
+export PSYCHOLOGY_MCP_CONTACT_EMAIL="you@example.com"
+uv run pytest -m integration --run-integration -q
 ```
 
-That is **verified working for `fastmcp run` locally** — the server started from config
-alone and completed a polite-pool call with no shell export. Treat it as documentation of
-the requirement and as configuration for local or non-Horizon runs. **Set the variable in
-the Horizon UI as well**; do not assume the file covers it.
+The integration suite **skips with an explicit message** when the variable is unset. That
+guard exists because of a real failure: the live suite previously ran green while the
+variable was unset, which meant the gateway-path tests measured the **anonymous** pool
+while being reported as the deployment's behaviour. A keyless API makes that failure
+silent — both pools work, so nothing errors.
 
-**The failure mode is graceful, not fatal.** Without the variable the gateway still serves
-— it drops from the polite pool to the anonymous pool, where Crossref documents a lower,
-unspecified limit. You would see reduced throughput, not an outage. That is worth knowing
-before anyone treats this as a launch blocker.
+### Why the address is not in `fastmcp.json`
 
-**Secrets must never go in `fastmcp.json`** — it is committed. This block is only
-defensible because a contact address is not a secret; it is already transmitted publicly in
-the `User-Agent` on every Crossref and OpenAlex request. `biosciences-mcp` keeps its real
-API keys in the UI for exactly this reason. If you would rather the address not sit in a
-repo that may go public, delete the `env` block — the UI step is needed regardless.
+An earlier revision of this file put it in `deployment.env`. It has been removed, for three
+reasons:
 
-**Do NOT set `S2_API_KEY`.** Semantic Scholar is Tier 1 and unbuilt. Tier 0 — Crossref and
-OpenAlex — is entirely keyless, and that property is worth preserving.
+1. **Not the house pattern.** `biosciences-mcp` is deployed and needs four variables
+   (`BIOGRID_API_KEY`, `NCBI_API_KEY`, `BIOSCIENCES_API_KEY`, `FASTMCP_CLOUD_ENDPOINT`);
+   its `fastmcp.json` declares **zero** `env` entries, as does `biosciences-mcp-edge`'s.
+   The platform, not the repo, is where variables live.
+2. **Not confirmed to be read by Horizon.** It works for `fastmcp run` locally; Horizon's
+   deployment page documents four UI fields and does not mention `fastmcp.json`.
+3. **It is a personal address in a repo that may go public.** Committing it buys nothing
+   the UI step doesn't already cover.
+
+`fastmcp.json` is committed, so **no secret ever belongs in it.**
+
+### Failure mode if the variable is missed
+
+Graceful, not fatal. The gateway still serves; it drops to the anonymous pool, where
+Crossref documents a lower, unspecified limit. Reduced throughput, not an outage — so this
+is not a launch blocker, but it *is* a silent one, which is why the local guard exists.
 
 ## Verified ready — 2026-08-16
 
