@@ -7,6 +7,7 @@ The rules under test are the ones that make this connector worth having, and the
 that would silently break the envelope if they were wrong.
 """
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -162,6 +163,34 @@ class TestRateDiscipline:
     def test_concurrency_is_one_because_the_limit_is_cumulative(self):
         """1 req/s CUMULATIVE across all endpoints — parallelism buys nothing."""
         assert s2.SemanticScholarClient(api_key="k").gate.concurrency == 1
+
+    def test_attempt_count_follows_the_platform_pattern(self):
+        """Every biosciences-mcp connector uses MAX_RETRIES = 3 — four attempts including
+        the first. This connector does NOT get a bespoke number."""
+        assert s2.SemanticScholarClient(api_key="k")._max_attempts == 4
+
+    def test_backoff_cap_matches_the_platform_max_backoff(self):
+        """drugbank.py MAX_BACKOFF = 60.0, marked Constitution v1.1.0 MANDATORY."""
+        assert s2.SemanticScholarClient(api_key="k")._backoff_cap == 60.0
+
+    def test_backoff_base_is_declared_because_it_cannot_be_discovered(self):
+        """The one deliberate divergence, and the reason for it.
+
+        errors.py already records that S2 returns sustained 429 with NO `Retry-After`, so
+        the Retry-After branch is inert and `AdaptiveGate.observe` receives nothing. Where
+        Crossref's posture is discovered from `x-rate-limit-*` at runtime, this one must be
+        declared — and the measured 1 req/s cumulative limit is what declares it.
+        """
+        client = s2.SemanticScholarClient(api_key="k")
+        assert client._backoff_base == s2.SAFE_INTERVAL_SECONDS
+
+    def test_the_adaptive_gate_never_speeds_up_on_silence(self, monkeypatch):
+        """S2 sends no rate headers at all. Silence must not be read as permission —
+        the same rule as constitution VII(d), applied to rate posture."""
+        client = s2.SemanticScholarClient(api_key="k")
+        before = client.gate.min_interval
+        asyncio.run(client.gate.observe(httpx.Headers({"x-amzn-errortype": "TooManyRequests"})))
+        assert client.gate.min_interval == before
 
     def test_it_is_far_slower_than_the_keyless_tier_0_connectors(self):
         from psychology_mcp.clients.crossref import CrossrefClient
@@ -476,3 +505,141 @@ class TestFoldingNeverDisplacesClassification:
     def test_no_semantic_scholar_results_changes_nothing(self):
         base = [_tier0(f"10.1/{i}") for i in range(10)]
         assert _fold_in_semanticscholar(base, [], limit=10) == base
+
+
+class TestVenueTypeFallback:
+    """AGE-590: `publicationVenue.type` when `publicationTypes` is absent.
+
+    MEASURED 2026-08-16 on the AEDP query — 4 of 5 records carry `publicationTypes: null`,
+    and one of those ("Transforming emotional suffering into flourishing", Counselling
+    Psychology Quarterly) carries `publicationVenue.type: "journal"`. It was emitting
+    `unverified` while the index had said where it appeared.
+    """
+
+    def test_journal_venue_classifies_when_no_types_are_supplied(self):
+        venue, basis = s2.classify({"publicationVenue": {"type": "journal"}})
+        assert venue is VenueClass.PEER_REVIEWED_ARTICLE
+        assert basis is ClassificationBasis.INDEX_ASSERTED
+
+    def test_the_measured_record_shape_now_classifies(self):
+        record = {
+            "title": "Transforming emotional suffering into flourishing",
+            "publicationTypes": None,
+            "venue": "Counselling Psychology Quarterly",
+            "publicationVenue": {"type": "journal"},
+            "externalIds": {"DOI": "10.1080/09515070.2019.1642852"},
+        }
+        work = s2.to_work(record)
+        assert work.venue_class is VenueClass.PEER_REVIEWED_ARTICLE
+        assert work.classification_basis is ClassificationBasis.INDEX_ASSERTED
+
+    def test_basis_is_index_asserted_never_registered(self):
+        """S2 remains an index, not a registration authority — a weaker signal cannot
+        produce a stronger basis."""
+        _, basis = s2.classify({"publicationVenue": {"type": "journal"}})
+        assert basis is not ClassificationBasis.REGISTERED
+
+    def test_the_venue_signal_is_recorded_in_source_type(self):
+        """VII(b): the basis must be interpretable. Without this, a venue-derived class is
+        indistinguishable from a type-derived one."""
+        work = s2.to_work({"publicationVenue": {"type": "journal"}})
+        assert work.source_type == "publicationVenue.type=journal"
+
+    def test_case_and_whitespace_are_tolerated(self):
+        assert (
+            s2.classify({"publicationVenue": {"type": " Journal "}})[0]
+            is VenueClass.PEER_REVIEWED_ARTICLE
+        )
+
+    @pytest.mark.parametrize("venue_type", ["conference", "book", "bookSeries", "", None])
+    def test_unmapped_venue_types_are_never_asserted(self, venue_type):
+        """VII(c). A venue's type is not the record's type: a record in a book venue is
+        more likely a chapter than a book, and guessing is asserting."""
+        venue, basis = s2.classify({"publicationVenue": {"type": venue_type}})
+        assert venue is VenueClass.UNVERIFIED
+        assert basis is ClassificationBasis.NONE
+
+
+class TestTypesAlwaysOutrankTheVenue:
+    def test_publication_types_win_when_both_are_present(self):
+        record = {
+            "publicationTypes": ["Book"],
+            "publicationVenue": {"type": "journal"},
+        }
+        assert s2.classify(record)[0] is VenueClass.BOOK
+
+    def test_a_preprint_in_a_journal_venue_stays_a_preprint(self):
+        """VII(a) laundering, by the other route. The published version's venue must not
+        promote the preprint record."""
+        record = {
+            "publicationTypes": ["Preprint", "JournalArticle"],
+            "publicationVenue": {"type": "journal"},
+        }
+        assert s2.classify(record)[0] is VenueClass.PREPRINT
+
+    @pytest.mark.parametrize("raw", ["Editorial", "LettersAndComments", "News", "Conference"])
+    def test_a_refused_type_is_not_upgraded_by_the_venue(self, raw):
+        """A record S2 explicitly typed as something we refuse to classify must not be
+        promoted by the weaker signal — that would route around VII(c)."""
+        record = {"publicationTypes": [raw], "publicationVenue": {"type": "journal"}}
+        venue, basis = s2.classify(record)
+        assert venue is VenueClass.UNVERIFIED
+        assert basis is ClassificationBasis.NONE
+
+
+class TestProvenanceBeatsVenue:
+    """Constitution VII(a), finding 1 — applied to the venue signal rather than the DOI."""
+
+    def test_an_arxiv_record_in_a_journal_venue_is_a_preprint(self):
+        record = {
+            "publicationVenue": {"type": "journal"},
+            "externalIds": {"ArXiv": "2301.00001", "DOI": "10.1/published"},
+        }
+        venue, basis = s2.classify(record)
+        assert venue is VenueClass.PREPRINT
+        assert basis is ClassificationBasis.INDEX_ASSERTED
+
+    def test_it_is_never_laundered_into_peer_reviewed(self):
+        record = {
+            "publicationVenue": {"type": "journal"},
+            "externalIds": {"ArXiv": "2301.00001"},
+        }
+        assert s2.classify(record)[0] is not VenueClass.PEER_REVIEWED_ARTICLE
+
+    def test_the_provenance_signal_is_recorded(self):
+        work = s2.to_work({"externalIds": {"ArXiv": "2301.00001"}})
+        assert work.source_type == "externalIds.ArXiv"
+
+    def test_an_explicit_type_still_wins_over_provenance(self):
+        """`publicationTypes` is the strongest signal; this path is only for its absence."""
+        record = {"publicationTypes": ["Book"], "externalIds": {"ArXiv": "2301.00001"}}
+        assert s2.classify(record)[0] is VenueClass.BOOK
+
+
+class TestTheFallbackDoesNotRescueTheDoilessRecords:
+    """MEASURED 2026-08-16 — and the reason this is recorded rather than fixed.
+
+    Both DOI-less AEDP records carry `publicationTypes`, `venue` AND `publicationVenue` all
+    null. Nothing about their class is knowable from this connector, and `unverified` /
+    `none` is the correct answer under VII, not a gap to close.
+    """
+
+    @pytest.mark.parametrize(
+        "record",
+        [
+            {"title": "AEDP: Transformance In Action", "externalIds": {"CorpusId": 1}},
+            {"title": "Transformance : The AEDP", "externalIds": {"CorpusId": 2}},
+        ],
+    )
+    def test_a_metadata_free_record_stays_unverified(self, record):
+        work = s2.to_work(record)
+        assert work.venue_class is VenueClass.UNVERIFIED
+        assert work.classification_basis is ClassificationBasis.NONE
+
+    def test_it_still_survives_as_a_hit(self):
+        """VII(b) — the whole point. Unclassifiable is not the same as not found."""
+        work = s2.to_work(
+            {"title": "AEDP: Transformance In Action", "externalIds": {"CorpusId": 1}}
+        )
+        assert work.title == "AEDP: Transformance In Action"
+        assert work.cross_references.semantic_scholar_id == "1"

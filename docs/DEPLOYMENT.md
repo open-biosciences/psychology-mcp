@@ -49,18 +49,24 @@ belt-and-braces, not a requirement.
 
 ## Environment variables — the complete inventory
 
-`.env.example` is the canonical list. **Two variables exist. Neither is set anywhere
-today** — there is no `.env` in this repo, and nothing is exported.
+`.env.example` is the canonical list. **Two variables exist, and both are now set
+locally** — `.env` is present and gitignored. Neither is set in Horizon yet; that is the
+one-time UI step above.
+
+*(Superseded 2026-08-16, AGE-590. An earlier revision said "neither is set anywhere today —
+there is no `.env` in this repo". That was true when written and false by the time it
+merged.)*
 
 | Variable | Needed for this deployment? | Current state | Notes |
 |---|---|---|---|
 | `PSYCHOLOGY_MCP_CONTACT_EMAIL` | **Yes — set it in the Horizon UI** | **unset**; no `.env` exists | Puts requests in the Crossref and OpenAlex **polite pools**. Not a secret: it is transmitted in the `User-Agent` on every request |
-| `S2_API_KEY` | **Not yet — the connector is the next thing to build** | unset | Semantic Scholar is **committed Tier 1**, not optional: `DECISION.md` §1 records it as *"wrap — condition discharged"*, key issued 2026-08-15, frozen benchmark re-run **authenticated**, **5 hit / 4 partial / 1 miss — second only to Crossref**. No `SemanticScholarClient` exists in `clients/` yet, so nothing reads the variable **today**. Set it the moment that connector lands |
+| `S2_API_KEY` | **Yes — set it in the Horizon UI** | set locally in `.env` | Semantic Scholar is **committed Tier 1**, not optional: `DECISION.md` §1 records it as *"wrap — condition discharged"*, key issued 2026-08-15, frozen benchmark re-run **authenticated**, **5 hit / 4 partial / 1 miss — second only to Crossref**. `SemanticScholarClient` shipped in AGE-588 and is live-verified as of 2026-08-16, so the gateway reads this variable now. **It is a real secret** — unlike the contact address, it must never be committed |
 
-**Tier 0 — Crossref and OpenAlex — is entirely keyless.** That is why the gateway serves
-correctly with nothing configured. It is **not** an argument for staying keyless: Semantic
-Scholar is the only credentialed connector on the roster and is committed, so this server
-will hold a real secret as soon as that connector ships. Plan the deployment for that.
+**Tier 0 — Crossref and OpenAlex — is entirely keyless**, which is why the gateway serves
+correctly with nothing configured, and why `search_works` degrades rather than fails when
+Semantic Scholar is unconfigured. That is a graceful-degradation property, **not** an
+argument for deploying without the key: Semantic Scholar is the only credentialed connector
+on the roster, it is committed, and it shipped. **This server holds a real secret today.**
 
 ### Semantic Scholar — what the record already establishes
 
@@ -147,8 +153,12 @@ repo ran in-process; this is the wire protocol a deployed gateway actually serve
 - `biosciences-mcp-edge/fastmcp.json`
 
 Neither declares `deployment.env` — and `biosciences-mcp` demonstrably needs four
-variables, so the platform, not the file, is where they live. The `env` block here is this
-repo's one deliberate divergence from the house pattern.
+variables, so the platform, not the file, is where they live. **This repo's `fastmcp.json`
+declares none either**, so it matches the house pattern with no divergence.
+
+*(Superseded 2026-08-16, AGE-590. An earlier revision called the `env` block "this repo's
+one deliberate divergence"; that block was removed further up this same document, and the
+sentence survived the edit.)*
 
 `hci-canon` diverges further: `source.type: "filesystem"`, a flat `mcp/server.py` rather
 than a package, and dependencies declared three ways at once (`pyproject.toml`,
