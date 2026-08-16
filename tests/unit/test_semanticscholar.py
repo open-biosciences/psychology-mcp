@@ -14,7 +14,14 @@ import httpx
 import pytest
 
 from psychology_mcp.clients import semanticscholar as s2
-from psychology_mcp.models.work import ClassificationBasis, RetractionStatus, VenueClass
+from psychology_mcp.models.cross_references import CrossReferences
+from psychology_mcp.models.work import (
+    ClassificationBasis,
+    RetractionStatus,
+    VenueClass,
+    Work,
+)
+from psychology_mcp.servers.literature import _fold_in_semanticscholar, _reserved_slots
 
 pytestmark = [pytest.mark.unit, pytest.mark.semanticscholar]
 
@@ -330,3 +337,142 @@ class TestKeyVariableAliases:
     def test_s2_api_key_is_the_committed_contract_and_wins(self, monkeypatch):
         """`.env.example` and the Layer-1 probe adapter both use S2_API_KEY."""
         assert s2.API_KEY_VARS[0] == "S2_API_KEY"
+
+
+def _tier0(doi: str) -> Work:
+    """A Crossref-shaped result: has a DOI, classified from registered metadata."""
+    return Work(
+        cross_references=CrossReferences(doi=doi),
+        title=f"Tier 0 {doi}",
+        venue_class=VenueClass.PEER_REVIEWED_ARTICLE,
+        classification_basis=ClassificationBasis.REGISTERED,
+        retraction_status=RetractionStatus.NOT_RETRACTED,
+    )
+
+
+def _s2(doi: str | None, corpus: str = "1") -> Work:
+    """A Semantic Scholar result. `doi=None` is the unique-reach case."""
+    return Work(
+        cross_references=CrossReferences(doi=doi, semantic_scholar_id=corpus),
+        title=f"S2 {doi or 'doi-less ' + corpus}",
+        venue_class=VenueClass.UNVERIFIED,
+        classification_basis=ClassificationBasis.NONE,
+        retraction_status=RetractionStatus.UNKNOWN,
+    )
+
+
+class TestReservedSlots:
+    """AGE-589: how much of a page Semantic Scholar may claim."""
+
+    @pytest.mark.parametrize(
+        ("limit", "expected"),
+        [(1, 0), (2, 1), (5, 1), (10, 2), (25, 5), (50, 10)],
+    )
+    def test_one_slot_in_five(self, limit, expected):
+        assert _reserved_slots(limit) == expected
+
+    def test_a_single_result_page_belongs_to_tier_0(self):
+        """Crossref carries the classification axis; at limit=1 it is the only honest answer."""
+        assert _reserved_slots(1) == 0
+
+    def test_reservation_never_consumes_the_whole_page(self):
+        for limit in range(1, 51):
+            assert _reserved_slots(limit) < limit
+
+
+class TestSingletonsSurviveTruncation:
+    """The defect AGE-589 fixed: appending to the tail is deleting.
+
+    MEASURED 2026-08-16 — `search_works("AEDP transformance", limit=10)` returned ZERO
+    DOI-less records through the gateway while the client returned two, because Crossref
+    filled all ten slots and the singletons were appended past the cut.
+    """
+
+    def test_doi_less_records_survive_a_full_tier_0_page(self):
+        base = [_tier0(f"10.1/{i}") for i in range(10)]
+        s2_works = [_s2(None, "c1"), _s2(None, "c2"), _s2("10.9/x")]
+
+        out = _fold_in_semanticscholar(base, s2_works, limit=10)
+
+        assert len(out) == 10
+        doi_less = [w for w in out if not w.cross_references.doi]
+        assert len(doi_less) == 2, "the unique reach must not be truncated away"
+
+    def test_the_regression_shape_exactly(self):
+        """Tail-append + truncate would yield zero. Pin the number, not just >0."""
+        base = [_tier0(f"10.1/{i}") for i in range(50)]
+        out = _fold_in_semanticscholar(base, [_s2(None, "c1")], limit=50)
+        assert sum(1 for w in out if not w.cross_references.doi) == 1
+
+    def test_tier_0_keeps_the_majority_of_the_page(self):
+        base = [_tier0(f"10.1/{i}") for i in range(10)]
+        s2_works = [_s2(None, f"c{i}") for i in range(10)]
+
+        out = _fold_in_semanticscholar(base, s2_works, limit=10)
+
+        assert len(out) == 10
+        assert sum(1 for w in out if w.cross_references.doi) == 8
+        assert sum(1 for w in out if not w.cross_references.doi) == 2
+
+    def test_doi_less_records_outrank_s2_records_that_have_a_doi(self):
+        """No other connector can reach a DOI-less record; a DOI-bearing one they might."""
+        base = [_tier0(f"10.1/{i}") for i in range(10)]
+        s2_works = [_s2("10.9/a"), _s2("10.9/b"), _s2(None, "c1")]
+
+        out = _fold_in_semanticscholar(base, s2_works, limit=10)
+
+        assert any(not w.cross_references.doi for w in out)
+
+    def test_a_short_tier_0_page_is_backfilled_not_left_short(self):
+        base = [_tier0("10.1/only")]
+        s2_works = [_s2(None, f"c{i}") for i in range(20)]
+
+        out = _fold_in_semanticscholar(base, s2_works, limit=10)
+
+        assert len(out) == 10, "reserved slots must not cap a page Tier 0 could not fill"
+
+    def test_nothing_is_dropped_when_the_page_is_not_contested(self):
+        base = [_tier0("10.1/a")]
+        s2_works = [_s2(None, "c1"), _s2("10.9/b")]
+
+        out = _fold_in_semanticscholar(base, s2_works, limit=10)
+
+        assert len(out) == 3
+
+    def test_output_never_exceeds_the_limit(self):
+        base = [_tier0(f"10.1/{i}") for i in range(50)]
+        s2_works = [_s2(None, f"c{i}") for i in range(50)]
+        for limit in (1, 2, 5, 10, 50):
+            assert len(_fold_in_semanticscholar(base, s2_works, limit)) == limit
+
+
+class TestFoldingNeverDisplacesClassification:
+    """VII(a)/VII(b): S2's `index-asserted` must never overwrite Crossref's `registered`."""
+
+    def test_a_shared_doi_merges_without_downgrading_the_basis(self):
+        base = [_tier0("10.1/shared")]
+        out = _fold_in_semanticscholar(base, [_s2("10.1/shared")], limit=10)
+
+        assert len(out) == 1, "a shared DOI is one work, not two"
+        assert out[0].classification_basis is ClassificationBasis.REGISTERED
+        assert out[0].venue_class is VenueClass.PEER_REVIEWED_ARTICLE
+
+    def test_s2_never_supplies_a_retraction_verdict(self):
+        base = [_tier0("10.1/shared")]
+        out = _fold_in_semanticscholar(base, [_s2("10.1/shared")], limit=10)
+        assert out[0].retraction_status is RetractionStatus.NOT_RETRACTED
+
+    def test_a_doi_less_singleton_keeps_unknown_retraction(self):
+        """VII(d): S2 has no retraction signal, and silence is never `not-retracted`."""
+        out = _fold_in_semanticscholar([], [_s2(None, "c1")], limit=10)
+        assert out[0].retraction_status is RetractionStatus.UNKNOWN
+
+    def test_tier_0_ranking_order_is_preserved(self):
+        base = [_tier0(f"10.1/{i}") for i in range(10)]
+        out = _fold_in_semanticscholar(base, [_s2(None, "c1")], limit=10)
+        kept = [w.cross_references.doi for w in out if w.cross_references.doi]
+        assert kept == [f"10.1/{i}" for i in range(len(kept))]
+
+    def test_no_semantic_scholar_results_changes_nothing(self):
+        base = [_tier0(f"10.1/{i}") for i in range(10)]
+        assert _fold_in_semanticscholar(base, [], limit=10) == base

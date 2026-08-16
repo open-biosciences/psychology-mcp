@@ -117,6 +117,73 @@ def _merge_by_doi(crossref_works: list[Work], openalex_works: list[Work]) -> lis
     return merged
 
 
+# MEASURED 2026-08-16 (AGE-589): Crossref alone fills every slot for a normal query, so
+# appending Semantic Scholar's singletons to the tail and then truncating to `limit` deleted
+# 100% of them. `search_works("AEDP transformance", limit=10)` surfaced ZERO DOI-less records
+# while the client, called directly, returned two. The unique reach this connector was
+# committed for was structurally unreachable through the tool.
+#
+# One slot in five, so S2 can never flood a page it did not rank.
+S2_RESERVED_FRACTION = 5
+
+
+def _reserved_slots(limit: int) -> int:
+    """Slots held back from the Tier-0 ranking for records only Semantic Scholar reaches.
+
+    Never the whole page: Crossref carries the classification axis and is the P1 story, so
+    at least one slot always belongs to the Tier-0 ranking. At `limit=1` this is zero, and
+    the single result is the Tier-0 top hit.
+    """
+    if limit <= 1:
+        return 0
+    return max(1, min(limit // S2_RESERVED_FRACTION, limit - 1))
+
+
+def _fold_in_semanticscholar(base: list[Work], s2_works: list[Work], limit: int) -> list[Work]:
+    """Join Semantic Scholar onto the Tier-0 ranking, reserving slots for its unique reach.
+
+    Two different things happen here and conflating them is what AGE-589 was:
+
+    - A DOI on both sides is a **merge**. `base` stays primary, so Crossref's `registered`
+      classification is never displaced by S2's `index-asserted` one, and S2 — which has no
+      retraction signal at all — cannot touch that axis either.
+    - A record only S2 holds is unique **reach**. Appending it to the tail is equivalent to
+      deleting it, because the tail is exactly what `[:limit]` removes.
+    """
+    by_doi = {w.cross_references.doi: w for w in s2_works if w.cross_references.doi}
+    matched: set[str] = set()
+    joined: list[Work] = []
+
+    for work in base:
+        doi = work.cross_references.doi
+        counterpart = by_doi.get(doi) if doi else None
+        if counterpart is not None and doi is not None:
+            matched.add(doi)
+            joined.append(merge_works(work, counterpart).work)
+        else:
+            joined.append(work)
+
+    # S2-only records, in S2's own rank order. DOI-less first: those are the ones no other
+    # connector on the roster can reach at all, and the reason this connector is committed.
+    # `sorted` is stable, so S2's ranking survives within each group.
+    singletons = sorted(
+        (
+            w
+            for w in s2_works
+            if not w.cross_references.doi or w.cross_references.doi not in matched
+        ),
+        key=lambda w: w.cross_references.doi is not None,
+    )
+
+    if len(joined) + len(singletons) <= limit:
+        return joined + singletons  # nothing is competing for slots
+
+    reserved = min(_reserved_slots(limit), len(singletons))
+    head = joined[: max(0, limit - reserved)]
+    # Backfill: a short Tier-0 page must not leave reserved slots empty.
+    return head + singletons[: limit - len(head)]
+
+
 async def _clear_retractions(works: list[Work]) -> list[Work]:
     """Second pass: resolve still-unknown retraction status against OpenAlex (AGE-580).
 
@@ -210,11 +277,11 @@ async def search_works(
 
     merged = _merge_by_doi(crossref_works, openalex_works)
 
-    # Tier 1, additive. Folded in with the SAME join, which already encodes the precedence
-    # Semantic Scholar needs: the left side stays primary, so Crossref's `registered`
-    # classification is never displaced by S2's `index-asserted` one, and S2 contributes no
-    # retraction signal at all. Its DOI-LESS records pass through as singletons — that is
-    # the unique reach it was committed for, and the only route to them.
+    # Tier 1, additive. `_fold_in_semanticscholar` keeps the left side primary — Crossref's
+    # `registered` classification is never displaced by S2's `index-asserted` one, and S2
+    # contributes no retraction signal at all — while RESERVING slots for the records only
+    # S2 reaches. It does not reuse `_merge_by_doi`: that join appends singletons to the
+    # tail, and the tail is what `[:limit]` deletes (AGE-589).
     #
     # Skipped silently when unconfigured: this is the one credentialed connector, and Tier 0
     # must keep serving without it.
@@ -222,7 +289,7 @@ async def search_works(
     if semanticscholar.is_configured:
         try:
             s2_works, _s2_total = await semanticscholar.search_works(query, limit=limit)
-            merged = _merge_by_doi(merged, s2_works)
+            merged = _fold_in_semanticscholar(merged, s2_works, limit)
         except (httpx.HTTPStatusError, httpx.TransportError):
             pass
 
