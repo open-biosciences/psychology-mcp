@@ -26,6 +26,7 @@ from fastmcp import FastMCP
 # biosciences-mcp's gateway uses absolute imports for the same reason.
 from psychology_mcp.clients.crossref import CrossrefClient
 from psychology_mcp.clients.openalex import OpenAlexClient
+from psychology_mcp.clients.semanticscholar import SemanticScholarClient
 from psychology_mcp.errors import DOI_PATTERN, from_http_error, from_transport_error
 from psychology_mcp.merge import merge_works
 from psychology_mcp.models.envelopes import ErrorEnvelope, PaginationEnvelope
@@ -37,6 +38,7 @@ _CONTACT = os.environ.get("PSYCHOLOGY_MCP_CONTACT_EMAIL", "").strip()
 
 _crossref: CrossrefClient | None = None
 _openalex: OpenAlexClient | None = None
+_semanticscholar: SemanticScholarClient | None = None
 
 # Accepted identifier grammar for the strict tool (constitution II / R4). A bare DOI is
 # canonical; the two common decorated forms are normalised rather than rejected, because
@@ -60,6 +62,20 @@ def get_openalex() -> OpenAlexClient:
     if _openalex is None:
         _openalex = OpenAlexClient(contact_email=_CONTACT)
     return _openalex
+
+
+def get_semanticscholar() -> SemanticScholarClient:
+    """Module-level singleton (ADR-004).
+
+    Tier 1 and CREDENTIALED. Unlike Crossref and OpenAlex there is no keyless fallback —
+    the unauthenticated pool completed zero of twelve benchmark queries across ~1.5h. The
+    client reports `is_configured`; callers degrade rather than fail, because Tier 0 still
+    serves without it.
+    """
+    global _semanticscholar
+    if _semanticscholar is None:
+        _semanticscholar = SemanticScholarClient()
+    return _semanticscholar
 
 
 def normalise_doi(raw: str) -> str | None:
@@ -192,7 +208,25 @@ async def search_works(
     if not isinstance(openalex_result, BaseException):
         openalex_works, _openalex_total = openalex_result
 
-    merged = _merge_by_doi(crossref_works, openalex_works)[:limit]
+    merged = _merge_by_doi(crossref_works, openalex_works)
+
+    # Tier 1, additive. Folded in with the SAME join, which already encodes the precedence
+    # Semantic Scholar needs: the left side stays primary, so Crossref's `registered`
+    # classification is never displaced by S2's `index-asserted` one, and S2 contributes no
+    # retraction signal at all. Its DOI-LESS records pass through as singletons — that is
+    # the unique reach it was committed for, and the only route to them.
+    #
+    # Skipped silently when unconfigured: this is the one credentialed connector, and Tier 0
+    # must keep serving without it.
+    semanticscholar = get_semanticscholar()
+    if semanticscholar.is_configured:
+        try:
+            s2_works, _s2_total = await semanticscholar.search_works(query, limit=limit)
+            merged = _merge_by_doi(merged, s2_works)
+        except (httpx.HTTPStatusError, httpx.TransportError):
+            pass
+
+    merged = merged[:limit]
     merged = await _clear_retractions(merged)
 
     if slim:

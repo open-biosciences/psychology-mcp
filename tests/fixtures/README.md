@@ -7,6 +7,7 @@ so the test suite is self-contained and never reaches the network.
 |---|---|---|
 | `crossref-C1.json` | `GET https://api.crossref.org/works?query=...&rows=5` (benchmark control C1) | 2026-08-15 |
 | `openalex-C1.json` | `GET https://api.openalex.org/works?search=...` (benchmark control C1) | 2026-08-15 |
+| `semantic-scholar-C1.json` | `GET https://api.semanticscholar.org/graph/v1/paper/search?query=...` (benchmark control C1), **authenticated** | 2026-08-15 |
 
 Upstream: `open-biosciences-plugins/docs/research/connectors/probe/fixtures/`.
 
