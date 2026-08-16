@@ -315,9 +315,7 @@ class TestMergerPrecedence:
 class TestClientsOverMockTransport:
     """Fuzzy-to-Fact shapes (ADR-001 §3), driven by the captured payloads."""
 
-    async def test_crossref_search_returns_works_and_a_within_connector_count(
-        self, crossref_items
-    ):
+    async def test_crossref_search_returns_works_and_a_within_connector_count(self, crossref_items):
         payload = _load("crossref-C1.json")
 
         def handler(request):

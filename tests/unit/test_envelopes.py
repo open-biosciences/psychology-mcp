@@ -23,7 +23,10 @@ class TestErrorEnvelope:
         assert "Semantic Scholar" in env.error.message
 
     def test_rate_limited_uses_retry_after_when_known(self):
-        assert "20 seconds" in ErrorEnvelope.rate_limited("Crossref", retry_after=20).error.recovery_hint
+        assert (
+            "20 seconds"
+            in ErrorEnvelope.rate_limited("Crossref", retry_after=20).error.recovery_hint
+        )
 
     def test_upstream_error_names_the_source_and_status(self):
         env = ErrorEnvelope.upstream_error("Europe PMC", 504)
@@ -42,4 +45,6 @@ class TestPaginationEnvelope:
     def test_total_count_is_optional(self):
         """Not every connector reports a total, and the ones that do are not comparable."""
         assert PaginationEnvelope.create(items=[], total_count=None).pagination.total_count is None
-        assert PaginationEnvelope.create(items=[], total_count=16523).pagination.total_count == 16523
+        assert (
+            PaginationEnvelope.create(items=[], total_count=16523).pagination.total_count == 16523
+        )
