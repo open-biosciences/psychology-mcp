@@ -276,6 +276,7 @@ class LiteratureClient:
             # Adopt the declared posture even on an error response — a 429 is precisely
             # when the server is most likely to be telling us the real limit.
             await self._gate.observe(response.headers)
+            self._on_response(response)
 
             if response.status_code in RETRYABLE_STATUS and attempt < self._max_attempts - 1:
                 retry_after = parse_retry_after(response.headers.get("retry-after", ""))
@@ -288,6 +289,15 @@ class LiteratureClient:
         if last_exc is not None:  # pragma: no cover - defensive
             raise last_exc
         raise RuntimeError("unreachable: retry loop exited without result")  # pragma: no cover
+
+    def _on_response(self, response: httpx.Response) -> None:
+        """Hook for connector-specific response observation. Default: no-op.
+
+        Exists because rate accounting is not uniform across the roster. The gate handles
+        the `x-rate-limit-*` spacing scheme; OpenAlex instead publishes a daily CREDIT
+        budget (`x-ratelimit-remaining`), which is a different quantity and must not be
+        folded into request spacing.
+        """
 
     async def close(self) -> None:
         """Close the HTTP client."""

@@ -19,6 +19,8 @@ OpenAlex is an INDEX, not a registration authority, so every classification it y
 import re
 from typing import Any
 
+import httpx
+
 from ..models.cross_references import CrossReferences
 from ..models.work import ClassificationBasis, RetractionStatus, VenueClass, Work
 from .base import LiteratureClient
@@ -161,12 +163,46 @@ class OpenAlexClient(LiteratureClient):
         kwargs.setdefault("concurrency", 4)
         super().__init__(base_url=BASE_URL, **kwargs)
         self._contact = (contact_email or "").strip()
+        self._credits_limit: int | None = None
+        self._credits_remaining: int | None = None
 
     def _params(self, extra: dict[str, Any]) -> dict[str, Any]:
         params = dict(extra)
         if self._contact:
             params["mailto"] = self._contact
         return params
+
+    def _on_response(self, response: httpx.Response) -> None:
+        """Record OpenAlex's daily CREDIT budget.
+
+        MEASURED 2026-08-16: OpenAlex publishes `x-ratelimit-limit: 1000`,
+        `x-ratelimit-remaining`, and `x-ratelimit-reset` — note the spelling differs from
+        the `x-rate-limit-*` scheme the gate reads, and the QUANTITY differs too. This is a
+        budget of calls per period, not a permitted rate, so it deliberately does NOT feed
+        request spacing: exhausting a daily budget is not something a shorter interval
+        fixes. Exposed for observability and for a caller that wants to back off before the
+        budget runs out.
+        """
+        for header, attr in (
+            ("x-ratelimit-limit", "_credits_limit"),
+            ("x-ratelimit-remaining", "_credits_remaining"),
+        ):
+            raw = response.headers.get(header)
+            if raw is not None:
+                try:
+                    setattr(self, attr, int(raw))
+                except ValueError:
+                    pass
+
+    @property
+    def credits_limit(self) -> int | None:
+        """Daily call budget OpenAlex last reported, or None if never seen."""
+        return self._credits_limit
+
+    @property
+    def credits_remaining(self) -> int | None:
+        """Calls remaining in the current budget window, or None if never seen."""
+        return self._credits_remaining
 
     async def search_works(self, query: str, per_page: int = 50) -> tuple[list[Work], int | None]:
         """Phase 1, fuzzy (ADR-001 §3).
