@@ -76,11 +76,7 @@ def parse_retry_after(raw: str) -> float | None:
         return None
     if parsed is None:
         return None
-    now = (
-        datetime.datetime.now(datetime.UTC)
-        if parsed.tzinfo
-        else datetime.datetime.now()
-    )
+    now = datetime.datetime.now(datetime.UTC) if parsed.tzinfo else datetime.datetime.now()
     return max(0.0, (parsed - now).total_seconds())
 
 

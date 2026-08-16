@@ -186,9 +186,7 @@ class TestConcurrencyIsBounded:
 
 class TestRetryBehaviour:
     @pytest.mark.parametrize("status", [429, 500, 502, 503, 504])
-    async def test_retries_throttling_and_transient_server_errors(
-        self, status, captured_sleeps
-    ):
+    async def test_retries_throttling_and_transient_server_errors(self, status, captured_sleeps):
         calls = {"n": 0}
 
         def handler(request):

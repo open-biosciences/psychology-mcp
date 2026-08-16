@@ -55,9 +55,7 @@ class CrossReferences(BaseModel):
     pmid: str | None = Field(default=None, description="PubMed ID")
     pmcid: str | None = Field(default=None, description="PubMed Central ID (PMC…)")
     openalex_id: str | None = Field(default=None, description="OpenAlex work ID (W…)")
-    semantic_scholar_id: str | None = Field(
-        default=None, description="S2 paperId or CorpusId"
-    )
+    semantic_scholar_id: str | None = Field(default=None, description="S2 paperId or CorpusId")
     arxiv_id: str | None = Field(default=None, description="arXiv identifier")
     osf_id: str | None = Field(default=None, description="OSF preprint identifier")
     issn: str | None = Field(default=None, description="ISSN of the containing serial")

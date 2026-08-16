@@ -176,4 +176,6 @@ class OpenAlexClient(LiteratureClient):
 
     async def get_work(self, doi: str) -> Work:
         """Phase 2, strict. OpenAlex resolves a DOI directly via the `https://doi.org/` form."""
-        return to_work(await self.get_json(f"/works/https://doi.org/{doi}", params=self._params({})))
+        return to_work(
+            await self.get_json(f"/works/https://doi.org/{doi}", params=self._params({}))
+        )

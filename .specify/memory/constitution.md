@@ -1,7 +1,7 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.2.0 → 1.3.1
+Version change: 1.2.0 → 1.4.0
 
 First pass of the hand-authored document through `/speckit-constitution`, followed by a
 review of the document AS A COMPLIANCE INSTRUMENT rather than as a statement of policy.
@@ -11,6 +11,18 @@ source text is retained at `docs/constitution-v1.2.0-hand-authored.md`, marked h
 A word-level diff of that input against this document confirmed **no clause was dropped**.
 Every difference is a command-spelling correction, a pronoun clarification, or a
 deliberate amendment reported below.
+
+v1.4.0 (2026-08-15) — MINOR. Settles one of the two OPEN clauses.
+
+- Principle IV: the slim-vs-`classification_basis` conflict with VII(b) is RESOLVED.
+  `Work.slim()` carries `doi`/`title`/`venue_class` and omits the basis; slim is a triage
+  projection and is never sufficient for an admissibility decision. Decided by the Tier-0
+  specification and recorded in AGE-575; wording approved before transcription here.
+  MINOR because it converts an explicitly unsettled clause into a binding rule, and adds
+  an obligation on tools returning slim results to say so in their own description.
+
+  VII(e) — whether the envelope carries a reachability field — REMAINS OPEN. It was not
+  in scope for Tier 0.
 
 v1.3.1 (2026-08-15) — PATCH. Removes dated build state from a governance document.
 
@@ -206,14 +218,17 @@ on. Determinism is what makes two connectors' answers comparable at all — and 
 what survives truncation. Dropping `venue_class` from the slim form would push the
 admissibility judgement onto the full record and, in practice, past the budget.
 
-**OPEN — unreconciled with VII(b).** The projection ships `venue_class` WITHOUT
-`classification_basis`, while VII(b) holds that a class is not interpretable without its
-basis and that basis-sufficiency is consumer editorial policy. A consumer triaging in slim
-mode therefore decides admissibility with exactly the field VII(b) says it needs. Both
-positions are deliberate and both are currently pinned by tests. The conflict is real and
-is NOT resolved here. The Tier-0 specification MUST settle it — either by adding the basis
-as a fourth slim field, or by stating that slim is triage-only and never sufficient for an
-admissibility decision.
+**SETTLED in v1.4.0** *(was OPEN; resolved by the Tier-0 specification, AGE-575).*
+
+`Work.slim()` carries `doi`/`title`/`venue_class` and omits `classification_basis`. **Slim
+is a triage projection and is never sufficient for an admissibility decision; a consumer
+applying a basis policy MUST fetch the full record.**
+
+This reconciles IV with VII(b) rather than overriding it. VII(b)'s objection was that a
+class without its basis is not an admissibility warrant — which stands. The resolution is
+that slim does not claim to be one: it answers "is this worth pulling?", not "may I cite
+this?". A tool returning slim results MUST say so in its own description, so the
+distinction reaches the agent rather than living only here.
 
 ### V. Specification-Before-Code
 
@@ -420,4 +435,4 @@ Two standing candidates:
   **A psychology variant MUST also inject constitution clauses**, because Principle VII has
   no ADR behind it and would otherwise drift out of every spec
 
-**Version**: 1.3.1 | **Ratified**: 2026-08-15 | **Last Amended**: 2026-08-15
+**Version**: 1.4.0 | **Ratified**: 2026-08-15 | **Last Amended**: 2026-08-15
