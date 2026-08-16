@@ -141,21 +141,77 @@ def _first_type(record: dict[str, Any]) -> str | None:
     return ",".join(str(t) for t in types) if types else None
 
 
+# Fallback vocabulary for `publicationVenue.type` (AGE-590), used ONLY when
+# `publicationTypes` is absent. Deliberately one entry.
+#
+# MEASURED 2026-08-16: on the AEDP query, 4 of 5 records carry `publicationTypes: null`,
+# and one of those — "Transforming emotional suffering into flourishing", Counselling
+# Psychology Quarterly — carries `publicationVenue.type: "journal"`. That record was
+# emitting `unverified` while the index had in fact said where it appeared.
+#
+# `conference`, `book` and `bookSeries` are deliberately UNMAPPED. A venue's type is not
+# the record's type: a record in a book venue is more likely a chapter than a book, and
+# guessing which would assert what no vocabulary supports (constitution VII(c)). They stay
+# UNVERIFIED for a Layer-4 heuristic to judge.
+_VENUE_TYPE_FALLBACK: dict[str, VenueClass] = {
+    "journal": VenueClass.PEER_REVIEWED_ARTICLE,
+}
+
+
+def _venue_type(record: dict[str, Any]) -> str | None:
+    venue_obj = record.get("publicationVenue") or {}
+    raw = venue_obj.get("type")
+    return str(raw).strip().lower() if raw else None
+
+
+def _venue_source_type(record: dict[str, Any]) -> str | None:
+    """The venue signal, namespaced so it is never mistaken for a `publicationTypes` value."""
+    if (record.get("externalIds") or {}).get("ArXiv"):
+        return "externalIds.ArXiv"
+    venue_type = _venue_type(record)
+    if venue_type is not None and venue_type in _VENUE_TYPE_FALLBACK:
+        return f"publicationVenue.type={venue_type}"
+    return None
+
+
 def classify(record: dict[str, Any]) -> tuple[VenueClass, ClassificationBasis]:
-    """Resolve venue class from `publicationTypes`, by precedence.
+    """Resolve venue class from `publicationTypes`, falling back to `publicationVenue.type`.
 
     **The DOI is irrelevant here, and that is the point.** §3(c) found 2 of 5 records with
     a registered type and no DOI. Under a DOI-first rule those are untierable even though
     the API told us what they are; constitution VII(b) exists to stop that, and this is the
     connector where the rule earns its keep.
+
+    `publicationTypes` always wins. The venue fallback is a strictly weaker signal — it
+    says where a record appeared, not what it is — so it runs only when the stronger signal
+    is absent, and it refuses to fire for records carrying preprint provenance (VII(a)).
+
+    When BOTH are absent the answer is `unverified`/`none`, and that is the correct answer,
+    not a gap: MEASURED 2026-08-16, the two DOI-less AEDP records carry `publicationTypes`,
+    `venue` and `publicationVenue` all null. Nothing is knowable about their class from
+    this connector, and saying so is what Principle VII is for.
     """
     types = record.get("publicationTypes") or []
-    if not types:
+    if types:
+        present = {str(t) for t in types}
+        for name, venue_class in _TYPE_PRECEDENCE:
+            if name in present:
+                return venue_class, ClassificationBasis.INDEX_ASSERTED
+        # A type was supplied but none we assert on — `Editorial`, `Conference`. Falling
+        # through to the venue would upgrade a record S2 explicitly typed as something we
+        # refuse to classify, so it stops here.
         return VenueClass.UNVERIFIED, ClassificationBasis.NONE
-    present = {str(t) for t in types}
-    for name, venue_class in _TYPE_PRECEDENCE:
-        if name in present:
-            return venue_class, ClassificationBasis.INDEX_ASSERTED
+
+    # PROVENANCE BEATS VENUE, exactly as it beats DOI resolution (constitution VII(a),
+    # finding 1). An arXiv record sitting in a journal venue is a preprint of that article,
+    # not the article; asserting `peer-reviewed-article` from the venue alone would launder
+    # it into standing it does not have.
+    if (record.get("externalIds") or {}).get("ArXiv"):
+        return VenueClass.PREPRINT, ClassificationBasis.INDEX_ASSERTED
+
+    venue_class = _VENUE_TYPE_FALLBACK.get(_venue_type(record) or "")
+    if venue_class is not None:
+        return venue_class, ClassificationBasis.INDEX_ASSERTED
     return VenueClass.UNVERIFIED, ClassificationBasis.NONE
 
 
@@ -205,7 +261,10 @@ def to_work(record: dict[str, Any]) -> Work:
         year=record.get("year"),
         venue_class=venue_class,
         classification_basis=basis,
-        source_type=_first_type(record),
+        # Which signal actually justified the class. Without this a venue-derived
+        # `peer-reviewed-article` is indistinguishable from a type-derived one, and VII(b)
+        # asks the basis to be interpretable, not merely present.
+        source_type=_first_type(record) or _venue_source_type(record),
         venue=record.get("venue") or venue_obj.get("name"),
         # MEASURED 0/5 — S2 never supplies a publisher. Read anyway so the field is not
         # silently dropped if that ever changes.
@@ -227,6 +286,21 @@ class SemanticScholarClient(LiteratureClient):
     def __init__(self, api_key: str | None = None, **kwargs: Any) -> None:
         kwargs.setdefault("min_interval", SAFE_INTERVAL_SECONDS)
         kwargs.setdefault("concurrency", 1)
+        # Retry posture follows the PLATFORM pattern, not a number invented here. Every
+        # biosciences-mcp connector (biogrid, chembl, ensembl, string, uniprot, iuphar)
+        # uses MAX_RETRIES = 3 — four attempts including the first, which is already the
+        # base default — with BACKOFF_FACTOR = 2.0 and MAX_BACKOFF = 60.0 (drugbank.py,
+        # marked "Constitution v1.1.0 MANDATORY"). The base class supplies the factor-of-2
+        # curve and full jitter; only the cap differed, so only the cap is set here.
+        #
+        # `backoff_base` is raised because this connector CANNOT be told when to retry:
+        # errors.py already records that S2 returns sustained 429 with no `Retry-After`,
+        # so the Retry-After branch is inert and `AdaptiveGate.observe` receives nothing.
+        # Where Crossref's posture is discovered from `x-rate-limit-*` headers at runtime,
+        # this one has to be declared, and the measured 1 req/s cumulative limit is what
+        # declares it.
+        kwargs.setdefault("backoff_base", SAFE_INTERVAL_SECONDS)
+        kwargs.setdefault("backoff_cap", 60.0)
         super().__init__(base_url=BASE_URL, **kwargs)
         # Credentials from the environment, never from source (constitution Required
         # Patterns). `S2_API_KEY` is the name used by `.env.example` and by the Layer-1
