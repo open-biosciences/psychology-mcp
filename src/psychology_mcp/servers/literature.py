@@ -29,7 +29,7 @@ from psychology_mcp.clients.openalex import OpenAlexClient
 from psychology_mcp.errors import DOI_PATTERN, from_http_error, from_transport_error
 from psychology_mcp.merge import merge_works
 from psychology_mcp.models.envelopes import ErrorEnvelope, PaginationEnvelope
-from psychology_mcp.models.work import Work
+from psychology_mcp.models.work import RetractionStatus, Work
 
 mcp: FastMCP = FastMCP(name="psychology-literature")
 
@@ -101,6 +101,45 @@ def _merge_by_doi(crossref_works: list[Work], openalex_works: list[Work]) -> lis
     return merged
 
 
+async def _clear_retractions(works: list[Work]) -> list[Work]:
+    """Second pass: resolve still-unknown retraction status against OpenAlex (AGE-580).
+
+    MEASURED: Crossref and OpenAlex rank DISJOINT sets for the same query — for the C1
+    control, DOI overlap was zero. So the first-pass join leaves most Crossref-sourced
+    results with `retraction_status: unknown`, and the joint design's whole point goes
+    unrealised on the search path.
+
+    This costs ONE extra call per search, not N: OpenAlex's `filter=doi:A|B|...` takes up
+    to 100 values, and search is capped at 50.
+
+    Failure DEGRADES. If the second pass fails, `unknown` stands. It is never upgraded to
+    `not-retracted` on the strength of a call that did not happen — constitution VII(d),
+    and the single most dangerous shortcut available in this file.
+    """
+    pending: dict[str, int] = {}
+    for index, work in enumerate(works):
+        doi = work.cross_references.doi
+        if doi and work.retraction_status is RetractionStatus.UNKNOWN:
+            pending.setdefault(doi.lower(), index)
+
+    if not pending:
+        return works
+
+    try:
+        resolved = await get_openalex().get_works_by_doi(list(pending))
+    except (httpx.HTTPStatusError, httpx.TransportError):
+        return works
+
+    updated = list(works)
+    for doi, index in pending.items():
+        counterpart = resolved.get(doi)
+        if counterpart is not None:
+            # Crossref stays primary for classification; this only fills the retraction
+            # axis, because merge_works defers to the side that actually classified.
+            updated[index] = merge_works(updated[index], counterpart).work
+    return updated
+
+
 @mcp.tool
 async def search_works(
     query: str,
@@ -154,6 +193,7 @@ async def search_works(
         openalex_works, _openalex_total = openalex_result
 
     merged = _merge_by_doi(crossref_works, openalex_works)[:limit]
+    merged = await _clear_retractions(merged)
 
     if slim:
         return PaginationEnvelope.create(
