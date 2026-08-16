@@ -16,6 +16,7 @@ than read from documentation:
   live.
 """
 
+import html
 from typing import Any
 
 from ..models.cross_references import CrossReferences
@@ -57,6 +58,18 @@ def _first(value: Any) -> str | None:
     if isinstance(value, list):
         return str(value[0]) if value else None
     return str(value) if value else None
+
+
+def _text(value: Any) -> str | None:
+    """First element of a Crossref list field, with HTML entities decoded.
+
+    MEASURED by reading live output: Crossref titles arrive HTML-ESCAPED. A real Q1 result
+    came back as `&gt;Finding and Befriending Parts`, and JATS markup (`<i>`, `<sub>`) shows
+    up in titles too. Passing that through means an agent reads, quotes, and cites the raw
+    entity - a defect invisible to any fixture test that only checks the field is a string.
+    """
+    raw = _first(value)
+    return html.unescape(raw) if raw is not None else None
 
 
 def _year(item: dict[str, Any]) -> int | None:
@@ -123,14 +136,14 @@ def to_work(item: dict[str, Any]) -> Work:
             isbn=_first(item.get("ISBN")),
             issn=_first(item.get("ISSN")),
         ),
-        title=_first(item.get("title")),
+        title=_text(item.get("title")),
         authors=_authors(item),
         year=_year(item),
         venue_class=venue_class,
         classification_basis=basis,
         source_type=item.get("type"),
-        venue=_first(item.get("container-title")),
-        publisher=item.get("publisher"),
+        venue=_text(item.get("container-title")),
+        publisher=html.unescape(item["publisher"]) if item.get("publisher") else None,
         retraction_status=retraction_status(item),
         discovery_route="crossref",
     )
