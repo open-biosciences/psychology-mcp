@@ -1,5 +1,16 @@
 # Deploying the gateway (AGE-586)
 
+> **PRODUCTION — LIVE and VERIFIED 2026-08-16**
+>
+> ```
+> https://psychology-mcp.fastmcp.app/mcp
+> ```
+>
+> Unauthenticated. Verified over the MCP wire protocol, not in-process: `initialize`,
+> `tools/list`, both tools, and the strict-tool guard. **Semantic Scholar is configured and
+> working in production** — see "Verified in production" below. This is the URL AGE-587
+> binds into `psychology-research/.mcp.json`.
+
 The platform is **Prefect Horizon** (`horizon.prefect.io`) — what the ticket calls "FastMCP
 Cloud". Built by the FastMCP team at Prefect; free personal tier. Deployed servers land at
 `https://<server-name>.fastmcp.app/mcp`, which is why the old name persists in URLs.
@@ -20,9 +31,10 @@ ships `dev`, `inspect`, `install`, `project prepare`, `run`, `tasks`, `version`.
    | **Server name** | `psychology-mcp` — this determines the URL |
    | **Description** | Scholarly literature retrieval for psychology, behavioural and social science |
    | **Entrypoint** | `src/psychology_mcp/servers/gateway.py:mcp` |
-   | **Authentication** | Optional OAuth toggle — off is fine; Tier 0 serves public bibliographic metadata |
+   | **Authentication** | OAuth toggle — **currently OFF**. See "The authentication decision" below; this is no longer the free choice it was when the gateway was keyless |
 
-4. Set `PSYCHOLOGY_MCP_CONTACT_EMAIL` to a contact address — see Environment variables below.
+4. Set **both** `PSYCHOLOGY_MCP_CONTACT_EMAIL` and `S2_API_KEY` — see Environment variables
+   below. Both are set in the live deployment as of 2026-08-16.
 5. Deploy. Typically under 60 seconds. Record the URL for AGE-587.
 
 Dependencies are auto-detected from `pyproject.toml` — nothing to configure there.
@@ -126,7 +138,57 @@ Graceful, not fatal. The gateway still serves; it drops to the anonymous pool, w
 Crossref documents a lower, unspecified limit. Reduced throughput, not an outage — so this
 is not a launch blocker, but it *is* a silent one, which is why the local guard exists.
 
-## Verified ready — 2026-08-16
+## The authentication decision
+
+**The gateway was first deployed with OAuth ON**, which returned `401 Bearer token required`
+on every call with a full RFC 9728 / OAuth 2.0 discovery surface (PKCE `S256`, dynamic client
+registration). It was turned off, and the tool surface verified immediately afterwards.
+
+Recorded because the tradeoff CHANGED and the earlier guidance in this file is now stale:
+
+- **When first written, the gateway was keyless.** "Off is fine — Tier 0 serves public
+  bibliographic metadata" was correct: there was nothing to protect and no cost to abuse.
+- **It is not keyless now.** The server holds `S2_API_KEY`, and Semantic Scholar is
+  **1 req/s CUMULATIVE with no keyless fallback**. An unauthenticated gateway lets any
+  caller exhaust that budget, and the Crossref/OpenAlex polite-pool standing is attached to
+  the contact address in `PSYCHOLOGY_MCP_CONTACT_EMAIL`.
+
+So the exposure is **quota and reputation, not data**. Nothing served here is sensitive; the
+risk is that a third party spends a rate budget the deployment depends on. Auth is off today
+by explicit decision. If S2-sourced results start degrading in production, throttling by
+strangers is the first thing to check — turning the toggle on is the mitigation, and it costs
+AGE-587 an authenticated binding.
+
+## Verified in production — 2026-08-16
+
+Against `https://psychology-mcp.fastmcp.app/mcp` over the **MCP wire protocol**, with OAuth
+off. This supersedes the earlier local-only run: every prior verification in this repo was
+either in-process or against a locally-served gateway.
+
+| Check | Result |
+|---|---|
+| `initialize` | `serverInfo.name: psychology-mcp`, FastMCP `2.14.7`, 666-char instructions delivered |
+| `tools/list` | `['get_work', 'search_works']` |
+| `get_work("10.1111/famp.12229")` | `peer-reviewed-article` / `registered` / `not-retracted` |
+| — its crosswalk | `{doi, pmid: 27273169, openalex_id: W2409023364, issn: 0014-7370}` |
+| `get_work("not a doi")` | `UNRESOLVED_ENTITY` — the strict guard holds over the wire |
+| `search_works("AEDP transformance", limit=10)` | 10 items |
+| `pagination.total_count` | `null` — constitution III holds in production |
+| **Semantic Scholar** | **2 DOI-less records, 4 carrying `semantic_scholar_id`** |
+
+The last row is the load-bearing one. `semantic_scholar_id` and DOI-less records can ONLY
+come from the S2 connector, so it confirms two things no local test can: `S2_API_KEY` is set
+correctly in Horizon, and **AGE-589's reserved page slots deliver the unique reach in
+production**, not just on a developer machine.
+
+Transport is **stateless** — no `mcp-session-id` is issued, which is normal for FastMCP HTTP
+and means a client must not expect to carry one.
+
+Response shape note for AGE-587: a tool result nests as
+`result.structuredContent.result` (an extra `result` level under `structuredContent`), with
+the same payload mirrored as JSON text in `result.content[0].text`.
+
+## Superseded — local wire check, 2026-08-16
 
 Exercised through the **MCP protocol over HTTP**, not in-process. Every prior test in this
 repo ran in-process; this is the wire protocol a deployed gateway actually serves.
@@ -141,7 +203,8 @@ repo ran in-process; this is the wire protocol a deployed gateway actually serve
 | `pagination.total_count` | `null` — constitution III holds over the wire |
 | `get_work("not a doi")` | `UNRESOLVED_ENTITY` — strict-tool guard holds over the wire |
 
-`POST /mcp/` with a trailing slash returns **307**; the endpoint is `/mcp`.
+`POST /mcp/` with a trailing slash returns **307**; the endpoint is `/mcp`. Confirmed
+against the production host as well.
 
 ## House pattern
 
