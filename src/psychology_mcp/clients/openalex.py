@@ -25,6 +25,13 @@ from .base import LiteratureClient
 
 BASE_URL = "https://api.openalex.org"
 
+# MEASURED 2026-08-16 against the live API: a `filter=doi:A|B|...` accepts up to 100 values.
+# 101 returns HTTP 400 with an explicit body - "Maximum number of values exceeded for doi."
+# Treated as a chunk size rather than a guarantee; a 400 on this route is still handled as
+# an upstream error rather than silently swallowed, per 03-crossref.md 8's warning that
+# observed limits are runtime state.
+MAX_FILTER_VALUES = 100
+
 _OPENALEX_ID = re.compile(r"(W\d+)")
 _TRAILING_DIGITS = re.compile(r"(\d+)\s*$")
 
@@ -179,3 +186,30 @@ class OpenAlexClient(LiteratureClient):
         return to_work(
             await self.get_json(f"/works/https://doi.org/{doi}", params=self._params({}))
         )
+
+    async def get_works_by_doi(self, dois: list[str]) -> dict[str, Work]:
+        """Resolve many DOIs in as few calls as possible.
+
+        MEASURED 2026-08-16: `filter=doi:A|B|...` accepts bare DOIs, pipe-separated, up to
+        `MAX_FILTER_VALUES` per request. This is what makes retraction clearing affordable
+        on a search result — N single lookups would cost N calls against a shared rate
+        budget, which is the Forbidden Pattern "unbounded concurrency → 429 loops, IP bans"
+        wearing a different hat.
+
+        Returns a mapping of LOWERCASED doi → Work. A DOI the index does not know is simply
+        absent from the mapping; a missing key is not an error, and must not be read as a
+        negative signal about the work.
+        """
+        wanted = [d for d in dict.fromkeys(d.strip() for d in dois) if d]
+        found: dict[str, Work] = {}
+        for start in range(0, len(wanted), MAX_FILTER_VALUES):
+            chunk = wanted[start : start + MAX_FILTER_VALUES]
+            payload = await self.get_json(
+                "/works",
+                params=self._params({"filter": "doi:" + "|".join(chunk), "per-page": len(chunk)}),
+            )
+            for record in payload.get("results") or []:
+                work = to_work(record)
+                if work.cross_references.doi:
+                    found[work.cross_references.doi.lower()] = work
+        return found
