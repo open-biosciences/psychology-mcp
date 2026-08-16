@@ -55,10 +55,33 @@ today** — there is no `.env` in this repo, and nothing is exported.
 | Variable | Needed for this deployment? | Current state | Notes |
 |---|---|---|---|
 | `PSYCHOLOGY_MCP_CONTACT_EMAIL` | **Yes — set it in the Horizon UI** | **unset**; no `.env` exists | Puts requests in the Crossref and OpenAlex **polite pools**. Not a secret: it is transmitted in the `User-Agent` on every request |
-| `S2_API_KEY` | **No — do not set it** | unset | Semantic Scholar is **Tier 1 and unbuilt**. Nothing in this deployment reads it. Setting it puts an unused credential on a server that otherwise holds none |
+| `S2_API_KEY` | **Not yet — the connector is the next thing to build** | unset | Semantic Scholar is **committed Tier 1**, not optional: `DECISION.md` §1 records it as *"wrap — condition discharged"*, key issued 2026-08-15, frozen benchmark re-run **authenticated**, **5 hit / 4 partial / 1 miss — second only to Crossref**. No `SemanticScholarClient` exists in `clients/` yet, so nothing reads the variable **today**. Set it the moment that connector lands |
 
 **Tier 0 — Crossref and OpenAlex — is entirely keyless.** That is why the gateway serves
-correctly with nothing configured, and it is worth preserving.
+correctly with nothing configured. It is **not** an argument for staying keyless: Semantic
+Scholar is the only credentialed connector on the roster and is committed, so this server
+will hold a real secret as soon as that connector ships. Plan the deployment for that.
+
+### Semantic Scholar — what the record already establishes
+
+The validation is done; only the client is missing. Three constraints carry into the build
+and the deployment:
+
+- **Rate: 1 req/s CUMULATIVE across all endpoints.** MEASURED tighter than nominal — 1.3s
+  spacing still drew a 429, so **2.5s is the observed-safe interval** for sustained
+  sequential use. This is far tighter than Crossref's or OpenAlex's and needs its own
+  starting posture.
+- **Attribution is a hard licence obligation**, not a courtesy: published material using S2
+  results must credit Semantic Scholar or cite "The Semantic Scholar Open Data Platform".
+  It is already in the constitution's Required Patterns, and it **propagates to every
+  downstream consumer of a grounded claim**.
+- **The unauthenticated tier is unusable** — zero of twelve benchmark queries completed
+  across three observation windows spanning ~1.5h. There is no keyless fallback; without
+  the key the connector simply does not function.
+
+It is also the connector that makes constitution II's multi-prefix carve-out real —
+`CorpusId:`, `PMID:`, `ARXIV:` — and the only route to the DOI-less records the envelope's
+`index-asserted` basis exists for.
 
 ### Local setup, before running the live suite
 
