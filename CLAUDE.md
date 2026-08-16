@@ -17,13 +17,12 @@ Layer 3  Plugin manifest        open-biosciences-plugins/*/.mcp.json → the gat
 Layer 4  Skills                 bio-research/* · psychology-research/* · consumers
 ```
 
-**Status: scaffolded, no connector servers built.** The protocol layer is implemented, and
-the constitution has now been through `/speckit-constitution` (v1.3.0). The next work is
-**`research.md` for the Tier-0 feature**, then `/speckit-specify`.
+**Status: Tier 0 complete (Crossref + OpenAlex jointly, 147 tests green, 2 gateway tools
+mounted).** `search_works` and `get_work` are live on the gateway, backed by a
+runtime-adaptive rate limiter, the two connectors, and the retraction merger.
 
-**The starting move is not `/speckit-specify`.** An earlier session treated it as one,
-substituted its own process for SpecKit, and the artifacts had to be redone. See
-**Process** below.
+Next: Tier 1 (Europe PMC, then Semantic Scholar) mounts **behind the same two tools**, not
+as new tool pairs. Open work is tracked in Linear — see **Process** below.
 
 ## Read these before designing anything
 
@@ -73,67 +72,53 @@ connector would produce four servers answering the same question differently.
   carries placeholders. Credentials belong to this layer — a plugin declares servers by URL
   and reaches keys via `${VAR}`, `headersHelper` or `userConfig`, and never holds one.
 
-## Process — how the next feature gets built
+## Process — how features are tracked and built
 
 ```
-/speckit-constitution   ✅ done — v1.3.0, hand-authored text was INPUT not output
-research.md             ← YOU ARE HERE. An index, not new research
-/speckit-specify        Tier 0: Crossref (P1) + OpenAlex (P2), one feature
-/speckit-clarify → /speckit-plan → /speckit-tasks → /speckit-analyze → /speckit-implement
+Linear Tracking        AGE-552 Sub-Issues (AGE-575 .. AGE-578)
+Feature Branches       feat/age-xxx-... (direct implementation + unit/scenario tests)
+Audit & Review         PM/Auditor reviews commits against the constitution
+Linear Sign-off        PM updates Linear state upon PR merge
 ```
 
-**`research.md` is an indexing job, not a research job.** The evidence already exists and
-is stronger than the precedent it's conforming to: a pre-registered 12-query benchmark,
-60 recorded cells, positive and negative controls, live-verified strict lookup. What it
-lacks is the *format* `/speckit-plan` consumes — `biosciences-mcp/specs/*/research.md` uses
-numbered resolved unknowns, each **Question / Decision / Rationale / Alternatives
-Considered / References**. Write ~a dozen R-entries that **cite** the dossiers rather than
-restate them:
+**Role Division:**
 
-| R | Question | Source |
-| --- | --- | --- |
-| R1 | Connector roster and build order | `DECISION.md` §1 |
-| R2 | Venue-class resolution order | `06-literature-envelope.md`, `03-crossref.md` §3.1 |
-| R3 | Retraction asymmetry, and its per-DOI cost | `03-crossref.md` §3.4 |
-| R4 | **Accepted identifier grammar per connector** | **unwritten — see constitution II** |
-| R5 | Rate limits (`x-concurrency-limit: 3`, observed not contractual) | `03-crossref.md` §6 |
-| R6 | No batch endpoint; N calls to resolve a DOI list | `03-crossref.md` §6 |
-| R7 | Three unresolvable venue classes | `DECISION.md` §5.2 |
+- **Implementer**: Creates clean feature branches, writes code/docs, implements
+  unit/scenario tests.
+- **PM & Auditor**: Maintains Linear issue states, defines acceptance criteria, audits code
+  against `.specify/memory/constitution.md`, and signs off on Linear issues upon PR merge.
 
-R4 falling out as genuinely missing is the format doing real work. **Do not re-run the
-benchmark** — it is frozen so that a later run is comparable, and re-running it is an
-amendment-by-measurement act, not a research act.
+This replaces the SpecKit CLI rituals. The deviation is **recorded in the constitution**
+under Governance → Recorded Deviations; specification-before-code survives as the Auditor's
+acceptance criteria, set before implementation starts.
 
-**Acceptance criteria are already written and pre-registered.** The 12-query benchmark was
-built to be "the acceptance suite for the Layer-2 build" (research spec §4), C2 included as
-a hallucination check. The user-facing outcome is measured too: six questions returned
-`UNRESOLVED` on 2026-08-14 because psychology had no Layer 2. "Those six now resolve,
-carrying `venue_class` and `classification_basis`" beats "implement Crossref tools".
+### Two things from the Layer-1 pass that still bind
 
-**Use constraint injection for `/speckit-specify`.** Prior art:
-`lifesciences-research/docs/speckit-standard-prompt-v2.md` — citing ADRs inside the specify
-prompt is what stops "build a Crossref wrapper" from forgetting Fuzzy-to-Fact. The
-psychology variant **must also inject constitution clauses**: Principle VII has no ADR
-behind it and will otherwise drift straight out of the spec.
+Kept because Tier 1 (Europe PMC, Semantic Scholar) will need them, not as process:
 
-**Promote `probe/fixtures/*.json` into `tests/`.** They are verified-genuine API payloads
-(the Layer-1 fan-out accepted work only on artefact verification, never on agent report).
-As golden fixtures they turn Principle VII from review-enforced into test-enforced — today's
-model tests can only assert the vocabulary *can represent* the right answer, not that a
-classifier *chooses* it.
+- **The 12-query benchmark is the acceptance suite**, pre-registered and frozen (research
+  spec §4), with C2 as a hallucination check. **Do not re-run it casually** — it is frozen
+  so a later run is comparable, which makes re-running it an amendment-by-measurement act.
+  The user-facing outcome is measured too: six questions returned `UNRESOLVED` on
+  2026-08-14 because psychology had no Layer 2.
+- **`probe/fixtures/*.json` are verified-genuine payloads**, not mocks — the Layer-1 fan-out
+  accepted a connector's work only on artefact verification. Two are already vendored into
+  `tests/fixtures/`; vendor the rest the same way when a connector needs them, with
+  provenance. They are what makes Principle VII test-enforced rather than review-enforced.
 
 ## Commands
 
 ```bash
 uv sync --extra dev                       # REQUIRED FIRST — see the trap below
-uv run pytest tests -q                    # full suite (25 unit tests, ~0.1s)
+uv run pytest tests -q                    # full suite (147 unit tests, ~6s)
 uv run pytest -m unit -q                  # by marker: unit | integration | e2e
 uv run pytest -m crossref -q              # per-connector markers: crossref | openalex |
                                           #   europepmc | semanticscholar
 uv run pytest tests/unit/test_work.py -q -k retraction   # one file / one test
 uv run ruff check . && uv run ruff format .
 uv run pyright                            # currently 0 errors — keep it there
-uv run fastmcp inspect fastmcp.json       # gateway surface; today reports 0 tools
+uv run fastmcp inspect fastmcp.json       # gateway surface; catches path-load failures
+                                          #   the test suite cannot see (see AGE-579)
 uv run fastmcp dev fastmcp.json           # gateway + MCP Inspector
 ```
 
@@ -205,37 +190,36 @@ are the ones an implementer walks into.
 
 ## Open items
 
-**Decisions blocking the Tier-0 spec:**
+**Open decisions:**
 
 - **Principle VI is currently unsatisfiable.** It mandates `scaffold-fastmcp`; the skill
   lives at `platform-skills/.claude/commands/` in **two versions** (v1 and `-v2`) and
   neither is installed in this repo's `.claude/skills/`. Install one and name it in the
-  constitution, or amend VI. The v2 workflow's "scaffold first" step depends on this.
-  *(The constitution states the rule — it must name an invocable skill at a stated version
-  — and deliberately does not carry this status, which goes stale. This line is the status.)*
-- **Two constitution clauses are marked `OPEN`** and the Tier-0 spec is where they get
-  settled: the slim-vs-`classification_basis` conflict (IV ↔ VII(b)), and whether the
-  envelope carries a reachability field (VII(e), inherited from `DECISION.md` §5.1a).
-- **R4 — accepted identifier grammar per connector — is unwritten.** Constitution II now
-  requires each connector spec to declare it; nothing declares it yet.
+  constitution, or amend VI. *(The constitution states the rule — it must name an invocable
+  skill at a stated version — and deliberately does not carry this status, which goes
+  stale. This line is the status.)*
+- **VII(e) remains `OPEN`** — whether the envelope carries a reachability field, inherited
+  from `DECISION.md` §5.1a. Not in Tier-0 scope. IV ↔ VII(b) was settled in v1.4.0.
 
 **Compliance status — what a Constitution Check must report today.** The constitution
 requires checked / deferred / uncheckable, never a blanket pass; this is the current
 inventory, and it lives here because it churns.
 
-- `fastmcp inspect fastmcp.json` reports **0 tools**, so Principles II and IV bind nothing
-  yet. **Deferred** — not passing.
-- The only deterministic gates are `ruff`, `pyright` and 25 unit tests. Every Required
-  Pattern whose enforcement column reads "contract tests" is **deferred**; that category
-  has no members yet.
-- **Checked today:** envelope shapes, `cross_references` omit-not-null, and VII(a)/(b)/(d)
-  at model level.
-- **Uncheckable today:** the protocol↛domain import rule (guarded by docstrings only), and
-  whether any classifier *chooses* correctly — there is no classifier yet.
+- **Checked:** async-first (I); the identifier grammar and `UNRESOLVED_ENTITY` (II, and R4
+  is now declared in `servers/literature.py`); envelope shapes and `cross_references`
+  omit-not-null (III); `slim=True` and the triage triple (IV); VII(a)–(d) at both model and
+  classifier level, via golden fixtures.
+- **Satisfied by deviation:** V — see Governance → Recorded Deviations.
+- **Deferred:** VI, until a scaffold skill is invocable here. `total_count` non-comparison
+  (III) is enforced for the merged path only; a single-connector tool could still expose one.
+- **Uncheckable:** the protocol↛domain import rule, still guarded by docstrings only. Making
+  it a lint rule or a test remains the cheapest available win.
+- **Gates that actually run:** `ruff`, `pyright`, 147 tests. `fastmcp inspect` is not yet in
+  CI (AGE-579) — and it caught a start-up failure the whole suite passed through.
 
 **Standing:**
 
-- **Gemini/Antigravity review** of the constitution (now v1.3.1) and
+- **Gemini/Antigravity review** of the constitution and
   `06-literature-envelope.md` is wanted before the Tier-0 spec depends on them. Precedent:
   `lifesciences-research/docs/antigravity-validation/`.
 - **Batch endpoints:** Crossref has **no** native multi-DOI batch endpoint (verified,

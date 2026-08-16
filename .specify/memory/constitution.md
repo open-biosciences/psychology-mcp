@@ -1,7 +1,7 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.2.0 → 1.4.0
+Version change: 1.2.0 → 1.5.0
 
 First pass of the hand-authored document through `/speckit-constitution`, followed by a
 review of the document AS A COMPLIANCE INSTRUMENT rather than as a statement of policy.
@@ -11,6 +11,18 @@ source text is retained at `docs/constitution-v1.2.0-hand-authored.md`, marked h
 A word-level diff of that input against this document confirmed **no clause was dropped**.
 Every difference is a command-spelling correction, a pronoun clarification, or a
 deliberate amendment reported below.
+
+v1.5.0 (2026-08-15) — MINOR. Records the tracking-system deviation (AGE-581).
+
+Governance gains a **Recorded Deviations** section. Linear sub-issues under AGE-552 are
+the roadmap and task tracker, replacing the SpecKit CLI rituals, with Principle V's
+specification-before-code discipline preserved as Auditor-set acceptance criteria and a
+pre-merge audit gate. Wording supplied by the PM/Auditor and transcribed verbatim; the
+reading note beneath it is added so a Constitution Check reports Principle V as SATISFIED
+BY DEVIATION rather than silently passing a principle whose named commands were not run.
+
+MINOR because it adds a section and changes how compliance against Principle V is
+assessed, without removing or reversing any principle.
 
 v1.4.0 (2026-08-15) — MINOR. Settles one of the two OPEN clauses.
 
@@ -395,6 +407,19 @@ frozen 12-query benchmark exists so such a run is directly comparable.
 - Principle VII violations are **blocking**. A classification defect ships silent and is
   discovered only when someone checks a citation.
 
+### Recorded Deviations
+
+- **Tracking System Deviation**: Per repository decision (2026-08-15), Linear sub-issues
+  (`AGE-575`..`AGE-578` under parent `AGE-552`) serve as the feature roadmap and task
+  tracking mechanism, replacing SpecKit CLI script rituals while preserving Principle V's
+  specification-before-code design discipline and strict audit gates.
+
+  *Reading note:* Principle V and ADR-003 still name the SpecKit commands. Under this
+  deviation those name the **discipline**, not the tooling — acceptance criteria are set
+  by the Auditor before implementation begins, and every increment is audited against this
+  document before merge. A Constitution Check therefore reports Principle V as
+  **satisfied by deviation**, not as violated and not as passed unexamined.
+
 ### Compliance on a partial implementation
 
 A Constitution Check run against a partial build MUST report each obligation as
@@ -435,4 +460,4 @@ Two standing candidates:
   **A psychology variant MUST also inject constitution clauses**, because Principle VII has
   no ADR behind it and would otherwise drift out of every spec
 
-**Version**: 1.4.0 | **Ratified**: 2026-08-15 | **Last Amended**: 2026-08-15
+**Version**: 1.5.0 | **Ratified**: 2026-08-15 | **Last Amended**: 2026-08-15
