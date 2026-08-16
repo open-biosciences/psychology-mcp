@@ -26,6 +26,7 @@ ADR unless and until the platform accepts one.
 | **004** Lifecycle | Module-level singleton; `@mcp.on_event` **FORBIDDEN** | `servers/gateway.py` |
 | **005** Git worktrees | Worktrees for parallelising 3+ servers | Applies once more than two connectors are built concurrently. Phase 0 first: the registry must name all connectors up front so no two agents share a write |
 | **006** Single-writer package | Split into a `clients/` package | `clients/base.py` is FROZEN; one module per connector |
+| **007** Gateway rate resilience | Full-jitter backoff on platform constants; headerless-throttle handling; absence-of-signal rate posture | **Adopted, with one measured divergence.** See adaptation 5 below and constitution Principle VIII |
 
 ## Adaptations that are NOT in any ADR
 
@@ -41,7 +42,24 @@ Recorded here so a future reader does not mistake them for platform policy:
    assert them; a Layer-4 publisher heuristic does.
 4. **Asymmetric retraction semantics** — OpenAlex reports the field always; Crossref only
    in the affirmative. `unknown` is therefore distinct from `not-retracted`.
+5. **Declared rather than discovered rate posture, for one connector.** ADR-007 mandates
+   reading `x-rate-limit-*` at runtime. Crossref does publish them — and MEASURED, its
+   polite-pool limit moved 3 → 10 req/s inside 24 hours, which is what makes the runtime
+   read worth having. **Semantic Scholar publishes nothing**: a 429 carries only
+   `x-amzn-errortype: TooManyRequestsException`, with no `Retry-After` and no
+   `x-rate-limit-*`, so `AdaptiveGate.observe` receives nothing and the Retry-After branch
+   is inert. Its interval is therefore DECLARED from measurement
+   (`SAFE_INTERVAL_SECONDS = 2.5`), and `backoff_base` is the single constant that
+   diverges from the platform set. Attempt count and `MAX_BACKOFF` do not diverge.
 
-Evidence for all four: `open-biosciences-plugins` →
+   The obvious remedy — stepping `min_interval` up on a headerless 429 — is **rejected
+   here on evidence**: MEASURED, those 429s are stochastic rather than rate-proportional
+   (8-call sweeps drew 4/8 at 2.5s spacing, 2/8 at 4.0s, 4/8 at 6.0s), so a step-up rule
+   climbs on noise with nothing to relax it. Constitution VIII(b) records the rejection.
+   Recorded here in case the platform later mandates step-up: this connector needs a
+   paired decay, or an exemption.
+
+Evidence for 1–4: `open-biosciences-plugins` →
 `docs/research/connectors/` (five dossiers, coverage matrix, envelope design, and
-`probe/CONTROLLER-NOTES.md`).
+`probe/CONTROLLER-NOTES.md`). Evidence for 5: AGE-590 measurements, recorded in
+`docs/HANDOFF.md` and in `clients/semanticscholar.py`.
