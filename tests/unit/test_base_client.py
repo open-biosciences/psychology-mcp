@@ -333,3 +333,94 @@ class TestAsyncDiscipline:
         client = _Client(handler, min_interval=0.05)
         assert await client.get_json("/works") == {"ok": True}
         await client.close()
+
+
+class TestHeaderlessThrottleDoesNotRatchet:
+    """Constitution VIII(b), added v1.6.0 (AGE-592).
+
+    The rule with teeth is the CONVERSE of absence-of-signal: silence is not permission to
+    speed up, and a headerless 429 is not proof to slow down either.
+
+    MEASURED 2026-08-16 against Semantic Scholar — its 429 carries only
+    `x-amzn-errortype: TooManyRequestsException`, and the throttling is STOCHASTIC rather
+    than rate-proportional (8-call sweeps drew 4/8 at 2.5s spacing, 2/8 at 4.0s, 4/8 at
+    6.0s). A step-up rule fed by that signal climbs on noise with nothing to relax it.
+
+    `base.py` already satisfies this by construction — `observe()` is the only mutator of
+    `min_interval` and it fires only when BOTH rate headers are present — so these tests
+    pin existing behaviour against a future "helpful" step-up rather than changing it.
+    """
+
+    async def test_a_headerless_429_leaves_the_interval_untouched(self):
+        gate = AdaptiveGate(min_interval=2.5, concurrency=1)
+        await gate.observe(
+            httpx.Headers(
+                {
+                    "x-amzn-errortype": "TooManyRequestsException",
+                    "x-amzn-requestid": "0950e786-45ec-4743-a94f-11c1167b6fbb",
+                }
+            )
+        )
+        assert gate.min_interval == 2.5
+        assert gate.concurrency == 1
+
+    async def test_repeated_headerless_throttles_do_not_accumulate(self):
+        """The failure mode: a ratchet with no decay walks the interval up forever."""
+        gate = AdaptiveGate(min_interval=2.5, concurrency=1)
+        for _ in range(10):
+            await gate.observe(httpx.Headers({"x-amzn-errortype": "TooManyRequestsException"}))
+        assert gate.min_interval == 2.5
+
+    async def test_a_retry_after_alone_does_not_become_the_new_interval(self):
+        """`Retry-After` governs THIS retry's delay, not the standing posture. Conflating
+        the two turns one throttle into a permanent slowdown."""
+        gate = AdaptiveGate(min_interval=0.5, concurrency=2)
+        await gate.observe(httpx.Headers({"retry-after": "120"}))
+        assert gate.min_interval == 0.5
+
+    async def test_a_throttle_that_DOES_publish_a_limit_is_still_adopted(self):
+        """VIII(b) forbids inventing a posture from silence — not ignoring a stated one."""
+        gate = AdaptiveGate(min_interval=0.1, concurrency=10)
+        await gate.observe(
+            httpx.Headers(
+                {
+                    "x-rate-limit-limit": "1",
+                    "x-rate-limit-interval": "1s",
+                    "x-concurrency-limit": "1",
+                }
+            )
+        )
+        assert gate.min_interval == pytest.approx(1.0)
+
+    def test_the_gate_exposes_no_step_up_api_at_all(self):
+        """Cheapest possible guard: a step-up rule would have to add a mutator, and this
+        fails the moment one appears without the paired decay VIII(b) requires."""
+        mutators = [
+            name
+            for name in dir(AdaptiveGate)
+            if not name.startswith("_") and name not in {"observe", "min_interval", "concurrency"}
+        ]
+        assert mutators == [], f"new AdaptiveGate surface needs a VIII(b) review: {mutators}"
+
+
+class TestPlatformRetryConstants:
+    """Constitution VIII(c): the constants are the platform's, and divergence is named."""
+
+    def test_attempt_count_matches_the_platform_max_retries(self):
+        """MAX_RETRIES = 3 across every biosciences-mcp connector — four attempts total."""
+        client = LiteratureClient(base_url="https://example.test")
+        assert client._max_attempts == 4
+
+    def test_backoff_curve_is_factor_two(self):
+        client = LiteratureClient(base_url="https://example.test")
+        assert client._backoff_base * 2**3 == client._backoff_base * 8
+
+    async def test_retry_after_takes_precedence_over_the_computed_delay(self):
+        """The established pattern, and it is inert for a connector that never sends it —
+        which is exactly why VIII(a) makes such a connector DECLARE its interval."""
+        client = LiteratureClient(base_url="https://example.test")
+        assert client._backoff_delay(0, retry_after=7.0) == 7.0
+
+    async def test_retry_after_is_capped(self):
+        client = LiteratureClient(base_url="https://example.test")
+        assert client._backoff_delay(0, retry_after=10_000.0) == client._backoff_cap

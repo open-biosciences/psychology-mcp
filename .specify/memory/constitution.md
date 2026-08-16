@@ -1,7 +1,7 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.2.0 → 1.5.0
+Version change: 1.2.0 → 1.6.0
 
 First pass of the hand-authored document through `/speckit-constitution`, followed by a
 review of the document AS A COMPLIANCE INSTRUMENT rather than as a statement of policy.
@@ -11,6 +11,28 @@ source text is retained at `docs/constitution-v1.2.0-hand-authored.md`, marked h
 A word-level diff of that input against this document confirmed **no clause was dropped**.
 Every difference is a command-spelling correction, a pronoun clarification, or a
 deliberate amendment reported below.
+
+v1.6.0 (2026-08-16) — MINOR. Adds Principle VIII: Headerless Gateway Rate Resilience
+(AGE-592), implementing platform ADR-007.
+
+Written because a governance gap produced real cost: no document defined how a connector
+must behave when an upstream throttles WITHOUT publishing a rate posture, so the behaviour
+was rediscovered empirically against a live API — including several runs of the frozen
+12-query benchmark, which CLAUDE.md forbids re-running casually.
+
+The pattern was already present in the codebase and unread: `errors.py` recorded Semantic
+Scholar's headerless 429, `base.py` implemented full-jitter backoff with Retry-After
+precedence, `AdaptiveGate.observe` implemented absence-of-signal, and twelve
+biosciences-mcp connectors carried the constants. VIII elevates what existed rather than
+inventing policy.
+
+Clause (b) is the one that is NOT a restatement: it forbids ratcheting `min_interval`
+upward on a headerless 429 without a paired decay, because MEASURED the throttle is
+stochastic rather than rate-proportional. The proposed remedy for (a) would have been a
+new defect.
+
+MINOR because it adds a principle and its Forbidden/Required rows without removing or
+reversing any existing clause.
 
 v1.5.0 (2026-08-15) — MINOR. Records the tracking-system deviation (AGE-581).
 
@@ -348,6 +370,61 @@ not support.
 confidently wrong classification is worse than an honest `unverified`. Every clause above
 is a specific way the obvious implementation gets it wrong.
 
+### VIII. Headerless Gateway Rate Resilience
+
+**A connector's rate posture is discovered where the upstream publishes one and declared
+where it does not. Silence is never read as permission — in either direction.**
+
+Implements platform **ADR-007** (*Gateway Rate Resilience, Full-Jitter Backoff, and
+Headerless Throttle Handling*, `biosciences-mcp/docs/adr/accepted/`). This principle binds
+the psychology instance; the platform document binds the suite. Where the two differ, ADR-007
+governs and the divergence belongs in `docs/adr/README.md`, not here.
+
+**(a) Discovered where published; declared where not.**
+MEASURED: Crossref publishes `x-rate-limit-limit` / `x-rate-limit-interval`, and its polite-pool
+limit moved 3 → 10 req/s inside 24 hours — which is why the posture is read at runtime rather
+than hardcoded. Semantic Scholar publishes nothing: a 429 carries only
+`x-amzn-errortype: TooManyRequestsException`, with **no `Retry-After` and no `x-rate-limit-*`**.
+A connector whose upstream is silent MUST declare its interval from measurement, and MUST say
+in the code where the number came from.
+
+**(b) Silence is not permission to speed up, and a throttle is not proof to slow down.**
+Absent rate headers leave the posture unchanged — the same rule as VII(d), applied to rate
+rather than retraction. The converse binds equally: a headerless 429 MUST NOT ratchet
+`min_interval` upward on its own. MEASURED: Semantic Scholar's 429s are **stochastic, not
+rate-proportional** — 8-call sweeps drew 4/8 at 2.5s spacing, 2/8 at 4.0s and 4/8 at 6.0s.
+A step-up rule fed by that signal climbs on noise with nothing to relax it again. Any adaptive
+step-up MUST be paired with an explicit decay and MUST be justified against a measurement
+showing the throttle actually tracks the rate.
+
+**(c) Retry constants are the platform's, and divergence is named.**
+Full-jitter exponential backoff — `uniform(0, min(base * 2**n, cap))` — with `Retry-After`
+taking precedence where it exists. The platform constants are `MAX_RETRIES = 3` (four attempts
+including the first), `BACKOFF_FACTOR = 2.0`, `MAX_BACKOFF = 60.0`. A connector MAY diverge on
+`backoff_base` **only** where the upstream cannot tell it when to retry, and MUST record the
+measurement that set it. Inventing a bespoke attempt count is a violation.
+
+**(d) An exhausted throttle is reported, never swallowed into a silent result.**
+Per ADR-001's error table, an upstream 429 surviving the retry budget is `RATE_LIMITED` with
+the remedy "retry with backoff". A tool MUST NOT return an empty or partial page that is
+indistinguishable from "nothing matched". Where a connector is **additive** and its loss is a
+documented degradation — as Semantic Scholar's is, and OpenAlex's is for classification — the
+degradation is permitted, but the always-reporting obligations of VII(d) still bind: nothing
+learned from a call that did not happen may be asserted.
+
+**(e) A live suite minimises calls; it does not merely space them.**
+MEASURED: a per-test fetch against a stochastically throttling upstream failed on a different
+random test every run, which is worse than a red suite because it teaches readers to ignore
+red. Live integration suites MUST use module-scoped single-fetch fixtures — fetch once, assert
+many — and MUST skip on retry-budget exhaustion **narrowed to 429 alone**, so every other
+status still fails loudly. Spacing queries further apart is not a substitute; it does not work
+against a throttle that is not rate-proportional.
+
+**Rationale:** The failure this prevents is not an outage — it is a suite that is green because
+the environment is empty, or a connector that looks reliable until a key exists. Both have
+happened here. Every clause is a measurement, and (b) exists specifically because the obvious
+remedy for (a) is wrong.
+
 ## Forbidden Patterns
 
 | Pattern | Violation | Why Forbidden |
@@ -364,6 +441,9 @@ is a specific way the obvious implementation gets it wrong.
 | **Cross-connector count comparison** | Ranking or summing `total_count` across sources | MEASURED: three orders of magnitude apart |
 | **Asserting an unresolvable class** | `venue_class: institute-publication` from `type` | No connector vocabulary supports it |
 | **Defaulting `unknown` to `not-retracted`** | Treating an absent retraction signal as a negative | Silence is not a negative |
+| **Bespoke retry constants** | A connector inventing its own attempt count instead of the platform's `MAX_RETRIES = 3` | Divergence hides which behaviour is policy and which is a guess (VIII(c)) |
+| **Ratcheting `min_interval` on a headerless 429** | Stepping the interval up with no published rate signal and no decay | MEASURED: the throttle is stochastic, so the rule climbs on noise (VIII(b)) |
+| **Spacing a live suite instead of shrinking it** | Adding inter-query delays to fix a stochastically throttling upstream | Does not work, and produces a differently-flaky suite each run (VIII(e)) |
 
 ## Required Patterns
 
@@ -375,7 +455,9 @@ is a specific way the obvious implementation gets it wrong.
 | Human approval gate | All non-trivial implementations | `/speckit-plan` → approval → `/speckit-implement` |
 | Async httpx clients | All API wrappers | Code review |
 | `slim=True` support | All batch and search tools | Contract tests |
-| Per-connector rate limiting | All clients | MEASURED limits differ by orders of magnitude — a shared default is wrong for most. Read `x-rate-limit-*` headers at runtime where published, rather than hardcoding |
+| Per-connector rate limiting | All clients | MEASURED limits differ by orders of magnitude — a shared default is wrong for most. Read `x-rate-limit-*` headers at runtime where published; where the upstream publishes nothing, DECLARE the interval from measurement and record where the number came from (VIII(a)) |
+| **Full-jitter backoff on the platform constants** | All clients | `uniform(0, min(base * 2**n, cap))`, `Retry-After` first. `MAX_RETRIES = 3`, `BACKOFF_FACTOR = 2.0`, `MAX_BACKOFF = 60.0`. `backoff_base` MAY diverge only where the upstream cannot say when to retry (VIII(c)) |
+| **Module-scoped single-fetch live fixtures** | All live integration suites | Fetch once, assert many; skip on retry exhaustion narrowed to 429 alone (VIII(e)) |
 | **`classification_basis` on every classified work** | All work responses | Contract tests |
 | **Polite-pool contact header** | Crossref, OpenAlex | Both grant materially better throughput for a contact address |
 | **Source attribution where a licence requires it** | Semantic Scholar, PubMed, and any connector whose terms demand it | **Semantic Scholar's licence requires attribution or citation of "The Semantic Scholar Open Data Platform" in any published material using its results** (verified 2026-08-15 on key issuance). PubMed's connector already imposes DOI links. These are hard obligations, not courtesies, and they propagate to every downstream consumer of a grounded claim |
@@ -460,4 +542,4 @@ Two standing candidates:
   **A psychology variant MUST also inject constitution clauses**, because Principle VII has
   no ADR behind it and would otherwise drift out of every spec
 
-**Version**: 1.5.0 | **Ratified**: 2026-08-15 | **Last Amended**: 2026-08-15
+**Version**: 1.6.0 | **Ratified**: 2026-08-15 | **Last Amended**: 2026-08-16
