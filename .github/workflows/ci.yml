@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: lint · types · tests · server load
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Sync dependencies
+        # The dev extra is REQUIRED. Without it `uv run pytest` falls through to a pytest
+        # on PATH under a different interpreter and every test errors on import - the repo
+        # looks broken when it is only unsynced.
+        run: uv sync --extra dev
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format check
+        # Not previously gated, which is how formatting drift accumulated across merged
+        # commits and then surfaced as unrelated churn in a feature PR.
+        run: uv run ruff format --check .
+
+      - name: Type check
+        run: uv run pyright
+
+      - name: Unit tests
+        # Marker-scoped on purpose. `integration` and `e2e` reach the live Crossref and
+        # OpenAlex APIs; they belong in a separate, non-blocking workflow (AGE-582) so CI
+        # never spends another service's rate budget on every push.
+        run: uv run pytest -m unit -q
+
+      - name: Server loads and exposes its tools
+        # AGE-579. `fastmcp.json` loads the gateway BY PATH, so a relative import or a
+        # mount error raises only at start-up - a failure the unit suite cannot see,
+        # because it imports modules directly. This gate exists because exactly that
+        # shipped once and was caught by hand.
+        run: uv run fastmcp inspect fastmcp.json
+
+      - name: Assert the gateway exposes its tools
+        # `inspect` exits 0 for a server that loads but mounts nothing, which is the
+        # silent-regression shape: green CI, empty tool surface.
+        #
+        # NOTE: the JSON must go to a FILE. Piping `--format fastmcp` to a parser fails -
+        # the console renderer word-wraps stdout and injects literal newlines inside JSON
+        # strings, producing "Invalid control character". Verified locally.
+        run: |
+          uv run fastmcp inspect fastmcp.json --format fastmcp -o inspect.json
+          python3 - <<'PY'
+          import json, sys
+          report = json.load(open("inspect.json"))
+          names = sorted(t["name"] for t in report.get("tools", []))
+          print("tools exposed:", names)
+          expected = {"search_works", "get_work"}
+          missing = expected - set(names)
+          if missing:
+              sys.exit(f"gateway is missing expected tools: {sorted(missing)}")
+          PY
+
+      - name: Upload the inspect report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fastmcp-inspect-report
+          path: inspect.json
+          if-no-files-found: warn
