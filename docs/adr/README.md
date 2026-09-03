@@ -7,6 +7,8 @@ authoritative copies live in:
 <biosciences-mcp checkout>/docs/adr/accepted/
 ```
 
+On GitHub: [`open-biosciences/biosciences-mcp/docs/adr/`](https://github.com/open-biosciences/biosciences-mcp/blob/main/docs/adr/) (`accepted/` for 001–006, `proposed/` for 007). The placement rule for the org is in [`biosciences-program/docs/adr/README.md`](https://github.com/open-biosciences/biosciences-program/blob/main/docs/adr/README.md).
+
 Do not fork them here. Where literature required something the biomedical instance does
 not specify, the adaptation is recorded below and implemented in code — it is not a new
 ADR unless and until the platform accepts one.
@@ -26,7 +28,7 @@ ADR unless and until the platform accepts one.
 | **004** Lifecycle | Module-level singleton; `@mcp.on_event` **FORBIDDEN** | `servers/gateway.py` |
 | **005** Git worktrees | Worktrees for parallelising 3+ servers | Applies once more than two connectors are built concurrently. Phase 0 first: the registry must name all connectors up front so no two agents share a write |
 | **006** Single-writer package | Split into a `clients/` package | `clients/base.py` is FROZEN; one module per connector |
-| **007** Gateway rate resilience | Full-jitter backoff on platform constants; headerless-throttle handling; absence-of-signal rate posture | **Adopted, with one measured divergence.** See adaptation 5 below and constitution Principle VIII |
+| **007** Gateway rate resilience — [`proposed/adr-007-v0.1.md`](https://github.com/open-biosciences/biosciences-mcp/blob/main/docs/adr/proposed/adr-007-v0.1.md), status Proposed (AGE-690) | Full-jitter backoff on platform constants; headerless-throttle handling; absence-of-signal rate posture | **Adopted, with one measured divergence.** Drafted from Principle VIII on 2026-09-02; see adaptation 5 below |
 
 ## Adaptations that are NOT in any ADR
 
