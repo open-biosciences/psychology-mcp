@@ -2,8 +2,8 @@
 
 This is the outcome the whole project exists to produce. On 2026-08-14 a consumer run of
 `psychology-evidence-builder` returned **six UNRESOLVED** research questions — not because
-the literature does not exist, but because psychology had no Layer 2 to query. Source:
-`hci-canon` → `research/vibrancy-runs/2026-08-14-don-lila/literature-grounding.md`.
+the literature does not exist, but because psychology had no Layer 2 to query. Source: an internal 2026-08-14 consumer run of `psychology-evidence-builder`;
+record kept outside this repo (see AGE-583).
 
 The six map one-to-one onto the frozen benchmark's first six coverage queries, which is not
 a coincidence: the research spec records that Q1-Q8 were derived from that gap list.

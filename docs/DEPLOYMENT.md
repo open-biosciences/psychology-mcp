@@ -49,15 +49,13 @@ deployment rather than a reading of the docs:
 |---|---|---|---|---|
 | `biosciences-mcp` | ✅ hatchling, `packages = ["src/biosciences_mcp"]` | **none** | src-layout package, **absolute imports** | ✅ |
 | `biosciences-mcp-edge` | ✅ | **none** | same | ✅ |
-| `hci-canon` | ✅ | ✅ (plus inline `environment.dependencies`) | flat `mcp/server.py` | ✅ |
 | **`psychology-mcp`** | ✅ hatchling, `packages = ["src/psychology_mcp"]` | none | src-layout package, absolute imports | pending |
 
 **This settles the one real packaging risk.** `servers/gateway.py` does
 `from psychology_mcp.servers.literature import ...` — an absolute import that only resolves
 if the *package itself* is installed, not merely its dependencies. `biosciences-mcp` has
 exactly that shape and deploys, so `environment.project = "."` plus a hatchling
-`[project]` is sufficient. `hci-canon` carries all three mechanisms at once; that is
-belt-and-braces, not a requirement.
+`[project]` is sufficient.
 
 ## Environment variables — the complete inventory
 
@@ -222,12 +220,6 @@ declares none either**, so it matches the house pattern with no divergence.
 *(Superseded 2026-08-16, AGE-590. An earlier revision called the `env` block "this repo's
 one deliberate divergence"; that block was removed further up this same document, and the
 sentence survived the edit.)*
-
-`hci-canon` diverges further: `source.type: "filesystem"`, a flat `mcp/server.py` rather
-than a package, and dependencies declared three ways at once (`pyproject.toml`,
-`requirements.txt`, **and** inline `environment.dependencies`). It **does** have a
-`pyproject.toml` — an earlier draft of this doc claimed otherwise and was wrong. Treat it
-as a more defensive older pattern, not as a target to copy.
 
 ## AGE-587 — a correction to the ticket text
 

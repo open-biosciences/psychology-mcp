@@ -4,7 +4,7 @@
 authoritative copies live in:
 
 ```
-/home/donbr/open-biosciences/biosciences-mcp/docs/adr/accepted/
+<biosciences-mcp checkout>/docs/adr/accepted/
 ```
 
 Do not fork them here. Where literature required something the biomedical instance does
