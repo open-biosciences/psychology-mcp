@@ -62,4 +62,4 @@ Recorded here so a future reader does not mistake them for platform policy:
 Evidence for 1–4: `open-biosciences-plugins` →
 `docs/research/connectors/` (five dossiers, coverage matrix, envelope design, and
 `probe/CONTROLLER-NOTES.md`). Evidence for 5: AGE-590 measurements, recorded in
-`docs/HANDOFF.md` and in `clients/semanticscholar.py`.
+`docs/measurements/2026-08-16-semantic-scholar.md` and in `clients/semanticscholar.py`.
