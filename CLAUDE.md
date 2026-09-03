@@ -92,6 +92,8 @@ This replaces the SpecKit CLI rituals. The deviation is **recorded in the consti
 under Governance → Recorded Deviations; specification-before-code survives as the Auditor's
 acceptance criteria, set before implementation starts.
 
+What has actually been run, with dates and commits: `docs/speckit-process-record.md` (AGE-699).
+
 ### Two things from the Layer-1 pass that still bind
 
 Kept because Tier 1 (Europe PMC, Semantic Scholar) will need them, not as process:
