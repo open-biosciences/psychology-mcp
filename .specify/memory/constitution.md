@@ -1,7 +1,13 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.2.0 → 1.6.0
+Version change: 1.2.0 → 1.6.1
+
+v1.6.1 (2026-09-03) — PATCH. Principle VIII cited "platform ADR-007" at
+`biosciences-mcp/docs/adr/accepted/`, where no such file existed (AGE-690). The platform
+document now exists as `biosciences-mcp/docs/adr/proposed/adr-007-v0.1.md`, status
+Proposed, drafted from this principle; the citation points at that path and says so. No
+clause changes. Guidance Documents gains the same pointer.
 
 First pass of the hand-authored document through `/speckit-constitution`, followed by a
 review of the document AS A COMPLIANCE INSTRUMENT rather than as a statement of policy.
@@ -376,9 +382,12 @@ is a specific way the obvious implementation gets it wrong.
 where it does not. Silence is never read as permission — in either direction.**
 
 Implements platform **ADR-007** (*Gateway Rate Resilience, Full-Jitter Backoff, and
-Headerless Throttle Handling*, `biosciences-mcp/docs/adr/accepted/`). This principle binds
-the psychology instance; the platform document binds the suite. Where the two differ, ADR-007
-governs and the divergence belongs in `docs/adr/README.md`, not here.
+Headerless Throttle Handling*), which exists as
+[`biosciences-mcp/docs/adr/proposed/adr-007-v0.1.md`](https://github.com/open-biosciences/biosciences-mcp/blob/main/docs/adr/proposed/adr-007-v0.1.md)
+— status **Proposed** (AGE-690), drafted 2026-09-02 from this principle and its measurements.
+This principle binds the psychology instance; the platform document binds the suite once
+accepted. Where the two differ, ADR-007 governs and the divergence belongs in
+`docs/adr/README.md`, not here.
 
 **(a) Discovered where published; declared where not.**
 MEASURED: Crossref publishes `x-rate-limit-limit` / `x-rate-limit-interval`, and its polite-pool
@@ -529,7 +538,8 @@ Two standing candidates:
 
 ### Guidance Documents
 
-- ADRs 001–006: `biosciences-mcp/docs/adr/accepted/`
+- ADRs 001–006: [`biosciences-mcp/docs/adr/accepted/`](https://github.com/open-biosciences/biosciences-mcp/blob/main/docs/adr/accepted/)
+- ADR-007 (Proposed): [`biosciences-mcp/docs/adr/proposed/adr-007-v0.1.md`](https://github.com/open-biosciences/biosciences-mcp/blob/main/docs/adr/proposed/adr-007-v0.1.md)
 - Their application here: `docs/adr/README.md`
 - Evidence for every MEASURED clause: `open-biosciences-plugins` →
   `docs/research/connectors/` (five dossiers, coverage matrix, envelope design, and
@@ -542,4 +552,4 @@ Two standing candidates:
   **A psychology variant MUST also inject constitution clauses**, because Principle VII has
   no ADR behind it and would otherwise drift out of every spec
 
-**Version**: 1.6.0 | **Ratified**: 2026-08-15 | **Last Amended**: 2026-08-16
+**Version**: 1.6.1 | **Ratified**: 2026-08-15 | **Last Amended**: 2026-09-03
